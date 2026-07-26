@@ -5,6 +5,8 @@ SuperPeanut 是一个侧载式 Chrome Extension，用于在 LinkedIn 候选人�
 ## 功能
 
 - LinkedIn 右下角常驻 Peanut 入口
+- 悬浮 Peanut 可拖动并记住位置，面板从宠物左侧展开
+- 匹配 Loading 中 Peanut 会与白色卷毛狗 Mochi 一起奔跑
 - 读取候选人当前职位、地点、工作经历与教育背景
 - 基于完整 HC/JD 生成单一最佳岗位报告
 - HC 支持 XLSX 导入、Agent 粘贴新增、编辑与删除
@@ -82,4 +84,3 @@ npm start
 结构化候选人快照、报告、HC 与对话会发送到配置的 Agent 和 Railway 服务。原始 LinkedIn Network response 与原始 CV 不会由 broker 持久保存。
 
 使用者需要遵守 LinkedIn 条款及所在地的招聘、隐私与劳动法规。年龄、性别、国籍、族裔、残障等受保护属性不得用于自动化招聘决策。
-

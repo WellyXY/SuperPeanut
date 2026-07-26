@@ -527,3 +527,28 @@
 .decision-block h3,.highlight-item b,.fit-item b { font-size:12px; }.decision-block p,.decision-block ul,.decision-block ol,.fit-item p { font-size:12px; line-height:1.68; }
 .fit-status { font-size:11px; }.form-label,.form-help,.notice { font-size:12px; }
 @media (max-width: 520px) { .sany-panel { width:100%; } }
+
+/* Draggable Peanut anchor with the panel pinned to its left. */
+.sany-shell { inset:auto; left:var(--pet-x); top:var(--pet-y); width:90px; height:111px; }
+.sany-trigger { position:relative; z-index:2; margin:0; cursor:grab; touch-action:none; user-select:none; -webkit-user-select:none; }
+.sany-trigger.is-dragging { cursor:grabbing; transform:scale(.98); }
+.sany-shell.is-open .sany-trigger { display:grid; }
+.sany-panel { position:fixed; left:var(--panel-x); top:var(--panel-y); width:min(450px,calc(100vw - 16px)); height:min(780px,calc(100dvh - 36px)); }
+.trigger-hint { white-space:nowrap; }
+
+/* Mochi joins Peanut for the loading run. */
+.loading-runway { width:220px; }
+.peanut-sprite-runner { animation:dog-track-peanut 2.5s linear infinite; }
+.mochi-sprite-runner { position:absolute; z-index:2; bottom:3px; left:-86px; width:78px; height:85px; animation:dog-track-mochi 2.5s linear infinite; filter:drop-shadow(0 4px 3px rgba(82,71,40,.13)); }
+.mochi-sprite { width:78px; height:85px; background-image:var(--mochi-spritesheet); background-repeat:no-repeat; background-size:546px 85px; background-position:0 0; image-rendering:pixelated; animation:mochi-sprite-frames .7s steps(1,end) infinite; }
+@keyframes dog-track-peanut { 0% { left:-100px; transform:translateY(0); } 25% { transform:translateY(-4px); } 50% { transform:translateY(0); } 75% { transform:translateY(-3px); } 100% { left:225px; transform:translateY(0); } }
+@keyframes dog-track-mochi { 0% { left:-86px; transform:translateY(-2px); } 25% { transform:translateY(1px); } 50% { transform:translateY(-3px); } 75% { transform:translateY(0); } 100% { left:228px; transform:translateY(-2px); } }
+@keyframes mochi-sprite-frames {
+  0%,14.27% { background-position:0 0; }
+  14.28%,28.55% { background-position:-78px 0; }
+  28.56%,42.83% { background-position:-156px 0; }
+  42.84%,57.11% { background-position:-234px 0; }
+  57.12%,71.39% { background-position:-312px 0; }
+  71.4%,85.67% { background-position:-390px 0; }
+  85.68%,100% { background-position:-468px 0; }
+}

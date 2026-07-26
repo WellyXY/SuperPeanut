@@ -3,7 +3,9 @@
   // on loopback prevents the candidate data and agent endpoint being public.
   const AGENT_ENDPOINT = "https://sany-agent-temp.racoonn.me";
   const HC_SORT_KEY = "superpeanut_hc_sort";
+  const PET_POSITION_KEY = "superpeanut_pet_position";
   const PEANUT_SPRITESHEET = chrome.runtime.getURL("assets/peanut-spritesheet.webp");
+  const MOCHI_RUNNING = chrome.runtime.getURL("assets/mochi-running.webp");
   const PEANUT_IDLE_FRAMES = ["00", "01", "02", "03", "04", "05"].map((frame) => chrome.runtime.getURL(`assets/peanut-idle-${frame}.png`));
   let invalidatedReloadScheduled = false;
   const recoverFromInvalidatedContext = (error) => {
@@ -48,6 +50,9 @@
     isAgentReplying: false,
     isUploadingCv: false,
     isParsingRole: false,
+    petPosition: null,
+    petDrag: null,
+    suppressPetClickUntil: 0,
   };
 
   const escapeHtml = (value) => String(value ?? "")
@@ -68,6 +73,22 @@
     return Number.isNaN(date.valueOf()) ? String(value) : new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(date);
   };
   const priorityClass = (priority) => String(priority || "S").toLowerCase();
+  const clampPetPosition = (position = {}) => {
+    const value = position && typeof position === "object" ? position : {};
+    const width = 90;
+    const height = 111;
+    const padding = 8;
+    const fallbackX = window.innerWidth - width - 18;
+    const fallbackY = window.innerHeight - height - 18;
+    const x = Number.isFinite(Number(value.x)) ? Number(value.x) : fallbackX;
+    const y = Number.isFinite(Number(value.y)) ? Number(value.y) : fallbackY;
+    return { x: Math.max(padding, Math.min(x, window.innerWidth - width - padding)), y: Math.max(padding, Math.min(y, window.innerHeight - height - padding)) };
+  };
+  const panelPositionForPet = (pet) => {
+    const panelWidth = Math.min(450, window.innerWidth - 16);
+    const panelHeight = Math.min(780, window.innerHeight - 36);
+    return { x: Math.max(8, Math.min(pet.x - panelWidth - 12, window.innerWidth - panelWidth - 8)), y: Math.max(8, Math.min(pet.y + 111 - panelHeight, window.innerHeight - panelHeight - 8)) };
+  };
 
   async function injectStyles() {
     const css = await fetch(chrome.runtime.getURL("content.css")).then((response) => response.text());
@@ -914,7 +935,7 @@
 
   function matchLoading() {
     return `<section class="match-loading" aria-live="polite" aria-label="正在分析候选人资料">
-      <div class="loading-runway"><span class="runway-spark spark-one"></span><span class="runway-spark spark-two"></span><div class="peanut-sprite-runner" role="img" aria-label="正在奔跑的像素金毛 Peanut"><div class="peanut-sprite" style="--peanut-spritesheet:url('${escapeAttribute(PEANUT_SPRITESHEET)}')"></div></div></div>
+      <div class="loading-runway"><span class="runway-spark spark-one"></span><span class="runway-spark spark-two"></span><div class="peanut-sprite-runner" role="img" aria-label="正在奔跑的 Peanut"><div class="peanut-sprite" style="--peanut-spritesheet:url('${escapeAttribute(PEANUT_SPRITESHEET)}')"></div></div><div class="mochi-sprite-runner" role="img" aria-label="正在和 Peanut 一起奔跑的白狗 Mochi"><div class="mochi-sprite" style="--mochi-spritesheet:url('${escapeAttribute(MOCHI_RUNNING)}')"></div></div></div>
       <div class="loading-copy"><p>SuperPeanut 正在为你找最佳岗位</p><span>核对经历、地点与 JD 要求…</span></div>
       <div class="loading-steps"><span class="is-done">读取履历</span><span class="is-active">比对 JD</span><span>生成建议</span></div>
     </section>`;
@@ -1022,10 +1043,13 @@
 
   function render() {
     const body = state.tab === "match" ? renderMatch() : state.tab === "hcs" ? renderHcs() : state.tab === "history" ? renderHistory() : renderAgent();
+    const pet = clampPetPosition(state.petPosition);
+    const panel = panelPositionForPet(pet);
+    state.petPosition = pet;
     shadow.querySelector(".app")?.remove();
     const app = document.createElement("div");
     app.className = "app";
-    app.innerHTML = `<div class="sany-shell ${state.isOpen ? "is-open" : ""}"><button class="sany-trigger" data-action="toggle" aria-label="打开 SuperPeanut"><span class="trigger-peanut" aria-hidden="true">${PEANUT_IDLE_FRAMES.map((frame) => `<i style="--peanut-idle-frame:url('${escapeAttribute(frame)}')"></i>`).join("")}</span><span class="trigger-hint">Peanut</span></button><aside class="sany-panel" aria-label="SuperPeanut 面板"><header class="panel-top"><div class="panel-head"><div class="brand"><div class="brand-mark">P</div><div><h1>SuperPeanut</h1><p>LinkedIn 招聘匹配工作台</p></div></div><button class="icon-button" data-action="close" aria-label="收起面板">×</button></div><nav class="tabs" aria-label="功能导航"><button class="tab ${state.tab === "match" ? "is-active" : ""}" data-action="tab" data-tab="match">候选人匹配</button><button class="tab ${state.tab === "hcs" ? "is-active" : ""}" data-action="tab" data-tab="hcs">HC 库</button><button class="tab ${state.tab === "history" ? "is-active" : ""}" data-action="tab" data-tab="history">查询记录</button><button class="tab ${state.tab === "agent" ? "is-active" : ""}" data-action="tab" data-tab="agent">Peanut</button></nav></header><main class="panel-body">${body}</main></aside>${modalHtml()}</div>`;
+    app.innerHTML = `<div class="sany-shell ${state.isOpen ? "is-open" : ""}" style="--pet-x:${pet.x}px;--pet-y:${pet.y}px;--panel-x:${panel.x}px;--panel-y:${panel.y}px"><button class="sany-trigger" data-action="toggle" aria-label="拖动或打开 SuperPeanut"><span class="trigger-peanut" aria-hidden="true">${PEANUT_IDLE_FRAMES.map((frame) => `<i style="--peanut-idle-frame:url('${escapeAttribute(frame)}')"></i>`).join("")}</span><span class="trigger-hint">拖动 · 点击打开</span></button><aside class="sany-panel" aria-label="SuperPeanut 面板"><header class="panel-top"><div class="panel-head"><div class="brand"><div class="brand-mark">P</div><div><h1>SuperPeanut</h1><p>LinkedIn 招聘匹配工作台</p></div></div><button class="icon-button" data-action="close" aria-label="收起面板">×</button></div><nav class="tabs" aria-label="功能导航"><button class="tab ${state.tab === "match" ? "is-active" : ""}" data-action="tab" data-tab="match">候选人匹配</button><button class="tab ${state.tab === "hcs" ? "is-active" : ""}" data-action="tab" data-tab="hcs">HC 库</button><button class="tab ${state.tab === "history" ? "is-active" : ""}" data-action="tab" data-tab="history">查询记录</button><button class="tab ${state.tab === "agent" ? "is-active" : ""}" data-action="tab" data-tab="agent">Peanut</button></nav></header><main class="panel-body">${body}</main></aside>${modalHtml()}</div>`;
     shadow.append(app);
   }
 
@@ -1235,7 +1259,7 @@
     if (!control) return;
     const action = control.dataset.action;
     if (action === "close-modal" && control.classList.contains("modal-backdrop") && event.target !== control) return;
-    if (action === "toggle") { state.isOpen = true; await refreshData({ rescan: true }); return; }
+    if (action === "toggle") { if (Date.now() < state.suppressPetClickUntil) return; state.isOpen = true; await refreshData({ rescan: true }); return; }
     if (action === "close") { state.isOpen = false; state.modal = null; render(); return; }
     if (action === "tab") { state.tab = control.dataset.tab; state.modal = null; state.flash = ""; render(); return; }
     if (action === "filter-product-line") { state.hcProductLine = control.dataset.productLine || "all"; render(); return; }
@@ -1275,6 +1299,39 @@
       if (window.confirm("清除全部候选人查询记录吗？")) { await SanyStore.clearHistory(); state.history = []; render(); }
     }
   });
+
+  shadow.addEventListener("pointerdown", (event) => {
+    const trigger = event.target.closest?.(".sany-trigger");
+    if (!trigger || event.button !== 0) return;
+    const pet = clampPetPosition(state.petPosition);
+    state.petDrag = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, petX: pet.x, petY: pet.y, moved: false };
+    trigger.setPointerCapture?.(event.pointerId);
+    trigger.classList.add("is-dragging");
+  });
+
+  shadow.addEventListener("pointermove", (event) => {
+    const drag = state.petDrag;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const next = clampPetPosition({ x: drag.petX + event.clientX - drag.startX, y: drag.petY + event.clientY - drag.startY });
+    if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 4) drag.moved = true;
+    state.petPosition = next;
+    const panel = panelPositionForPet(next);
+    const shell = shadow.querySelector(".sany-shell");
+    shell?.style.setProperty("--pet-x", `${next.x}px`);
+    shell?.style.setProperty("--pet-y", `${next.y}px`);
+    shell?.style.setProperty("--panel-x", `${panel.x}px`);
+    shell?.style.setProperty("--panel-y", `${panel.y}px`);
+  });
+
+  shadow.addEventListener("pointerup", async (event) => {
+    const drag = state.petDrag;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    event.target.closest?.(".sany-trigger")?.classList.remove("is-dragging");
+    if (drag.moved) { state.suppressPetClickUntil = Date.now() + 300; await chrome.storage.local.set({ [PET_POSITION_KEY]: state.petPosition }); }
+    state.petDrag = null;
+  });
+
+  shadow.addEventListener("pointercancel", () => { state.petDrag = null; });
 
   shadow.addEventListener("change", async (event) => {
     const target = event.target;
@@ -1345,10 +1402,16 @@
 
   const pageObserver = new MutationObserver(() => refreshCandidateAfterLinkedInPaint());
   pageObserver.observe(document.documentElement, { childList: true, subtree: true });
+  let petResizeTimer;
+  window.addEventListener("resize", () => {
+    window.clearTimeout(petResizeTimer);
+    petResizeTimer = window.setTimeout(() => { state.petPosition = clampPetPosition(state.petPosition); render(); }, 120);
+  });
 
   await injectStyles();
-  const savedUi = await chrome.storage.local.get(HC_SORT_KEY);
+  const savedUi = await chrome.storage.local.get([HC_SORT_KEY, PET_POSITION_KEY]);
   if (["date", "priority"].includes(savedUi[HC_SORT_KEY])) state.hcSort = savedUi[HC_SORT_KEY];
+  state.petPosition = clampPetPosition(savedUi[PET_POSITION_KEY]);
   await refreshData({ rescan: true });
   refreshCandidateAfterLinkedInPaint();
 })().catch((error) => {
