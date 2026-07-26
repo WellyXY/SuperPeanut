@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SuperPeanut",
-  "version": "1.1.10",
+  "version": "1.1.11",
   "description": "团队分发版：首次安装不预载 HC，在 LinkedIn 候选人页面快速匹配你自行导入的岗位。",
   "permissions": ["storage", "tabs"],
   "host_permissions": ["https://www.linkedin.com/*", "https://sany-agent-temp.racoonn.me/*", "https://superpeanut-storage-production.up.railway.app/*"],
