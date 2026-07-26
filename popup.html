@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SANY Talent Match</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main class="popup">
+      <header>
+        <div class="mark">S</div>
+        <div><h1>SANY Talent Match</h1><p>LinkedIn 招聘匹配工作台</p></div>
+      </header>
+      <section class="status"><span id="hc-count">读取中</span><span>已加载岗位</span></section>
+      <button class="primary" id="open-panel">在 LinkedIn 打开工作台</button>
+      <label class="import-label" for="import-file">替换 HC 清单（XLSX）</label>
+      <input id="import-file" type="file" accept=".xlsx,.xls" hidden>
+      <p id="message" class="message">首次使用已预载 SANY HC Overview。</p>
+      <p class="footnote">在 LinkedIn 候选人主页中点击右下角悬浮按钮，即可生成多岗位匹配报告。</p>
+    </main>
+    <script src="lib/storage.js"></script>
+    <script src="lib/xlsx-parser.js"></script>
+    <script src="data/default-hcs.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>

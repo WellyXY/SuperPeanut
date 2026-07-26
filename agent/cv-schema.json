@@ -1,0 +1,37 @@
+{
+  "type": "object",
+  "required": ["candidate"],
+  "properties": {
+    "candidate": {
+      "type": "object",
+      "required": ["name", "headline", "location", "profile"],
+      "properties": {
+        "name": { "type": "string" },
+        "headline": { "type": "string" },
+        "location": { "type": "string" },
+        "profile": {
+          "type": "object",
+          "required": ["about", "experience", "education", "skills", "languages", "careerYears", "evidenceText"],
+          "properties": {
+            "about": { "type": "string" },
+            "experience": {
+              "type": "array", "maxItems": 12,
+              "items": { "type": "object", "required": ["title", "company", "dateRange", "startYear", "location", "summary"], "properties": { "title": { "type": "string" }, "company": { "type": "string" }, "dateRange": { "type": "string" }, "startYear": { "type": ["integer", "null"] }, "location": { "type": "string" }, "summary": { "type": "string" } }, "additionalProperties": false }
+            },
+            "education": {
+              "type": "array", "maxItems": 6,
+              "items": { "type": "object", "required": ["school", "degree", "dates", "graduationYear"], "properties": { "school": { "type": "string" }, "degree": { "type": "string" }, "dates": { "type": "string" }, "graduationYear": { "type": ["integer", "null"] } }, "additionalProperties": false }
+            },
+            "skills": { "type": "array", "maxItems": 24, "items": { "type": "string" } },
+            "languages": { "type": "array", "maxItems": 12, "items": { "type": "string" } },
+            "careerYears": { "type": ["integer", "null"] },
+            "evidenceText": { "type": "string" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

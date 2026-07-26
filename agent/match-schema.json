@@ -1,0 +1,58 @@
+{
+  "type": "object",
+  "required": ["reports"],
+  "properties": {
+    "reports": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["roleId", "score", "verdict", "summary", "evidence", "risks", "roleMatchTag", "locationMatchTag", "locationAssessment", "experienceAssessment", "candidateOverview", "highlights", "requirementFit", "keyVariable", "compensationAssessment", "recommendation", "nextSteps"],
+        "properties": {
+          "roleId": { "type": "string" },
+          "score": { "type": "integer", "minimum": 0, "maximum": 100 },
+          "verdict": { "type": "string" },
+          "summary": { "type": "string" },
+          "evidence": { "type": "array", "maxItems": 2, "items": { "type": "string" } },
+          "risks": { "type": "array", "maxItems": 2, "items": { "type": "string" } },
+          "roleMatchTag": { "type": "string", "enum": ["直接匹配", "可迁移", "需核实", "匹配较弱"] },
+          "locationMatchTag": { "type": "string", "enum": ["地点一致", "可通勤", "需要搬迁", "待确认"] },
+          "locationAssessment": { "type": "string" },
+          "experienceAssessment": { "type": "string" },
+          "candidateOverview": { "type": "array", "minItems": 2, "maxItems": 4, "items": { "type": "string" } },
+          "highlights": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 5,
+            "items": {
+              "type": "object",
+              "required": ["title", "detail"],
+              "properties": { "title": { "type": "string" }, "detail": { "type": "string" } },
+              "additionalProperties": false
+            }
+          },
+          "requirementFit": {
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 6,
+            "items": {
+              "type": "object",
+              "required": ["requirement", "status", "detail"],
+              "properties": {
+                "requirement": { "type": "string" },
+                "status": { "type": "string", "enum": ["已验证", "部分验证", "待确认", "不匹配"] },
+                "detail": { "type": "string" }
+              },
+              "additionalProperties": false
+            }
+          },
+          "keyVariable": { "type": "string" },
+          "compensationAssessment": { "type": "string" },
+          "recommendation": { "type": "string" },
+          "nextSteps": { "type": "array", "minItems": 2, "maxItems": 4, "items": { "type": "string" } }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
