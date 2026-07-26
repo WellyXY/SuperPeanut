@@ -533,8 +533,7 @@
 .sany-trigger { width:142px; }
 .trigger-pet-pair { display:flex; align-items:flex-end; justify-content:center; width:142px; height:96px; }
 .trigger-pet-pair .trigger-peanut { flex:0 0 86px; }
-.trigger-mochi { flex:0 0 68px; width:68px; height:74px; margin-left:-15px; margin-bottom:1px; background-image:var(--mochi-spritesheet); background-repeat:no-repeat; background-size:476px 74px; background-position:0 0; image-rendering:pixelated; filter:drop-shadow(0 6px 4px rgba(78,64,36,.16)); transform-origin:50% 100%; animation:mochi-idle-breathe 2.8s ease-in-out infinite; }
-@keyframes mochi-idle-breathe { 0%,100% { transform:translateY(0) rotate(-1deg); } 50% { transform:translateY(-2px) rotate(1deg); } }
+.trigger-mochi { flex:0 0 68px; width:68px; height:74px; margin-left:-15px; margin-bottom:1px; background:var(--mochi-idle) center bottom/contain no-repeat; image-rendering:pixelated; filter:drop-shadow(0 6px 4px rgba(78,64,36,.16)); }
 .sany-trigger { position:relative; z-index:2; margin:0; cursor:grab; touch-action:none; user-select:none; -webkit-user-select:none; }
 .sany-trigger.is-dragging { cursor:grabbing; transform:scale(.98); }
 .sany-shell.is-open .sany-trigger { display:grid; }

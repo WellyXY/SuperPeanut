@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SuperPeanut",
-  "version": "1.1.9",
+  "version": "1.1.10",
   "description": "团队分发版：首次安装不预载 HC，在 LinkedIn 候选人页面快速匹配你自行导入的岗位。",
   "permissions": ["storage", "tabs"],
   "host_permissions": ["https://www.linkedin.com/*", "https://sany-agent-temp.racoonn.me/*", "https://superpeanut-storage-production.up.railway.app/*"],
@@ -26,7 +26,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["content.css", "assets/superpeanut.png", "assets/peanut-spritesheet.webp", "assets/mochi-running.webp", "assets/peanut-idle-00.png", "assets/peanut-idle-01.png", "assets/peanut-idle-02.png", "assets/peanut-idle-03.png", "assets/peanut-idle-04.png", "assets/peanut-idle-05.png"],
+      "resources": ["content.css", "assets/superpeanut.png", "assets/peanut-spritesheet.webp", "assets/mochi-running.webp", "assets/mochi-idle.webp", "assets/peanut-idle-00.png", "assets/peanut-idle-01.png", "assets/peanut-idle-02.png", "assets/peanut-idle-03.png", "assets/peanut-idle-04.png", "assets/peanut-idle-05.png"],
       "matches": ["https://www.linkedin.com/*"]
     }
   ]
