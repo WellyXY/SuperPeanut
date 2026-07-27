@@ -60,6 +60,23 @@
   color: #225f32 !important;
 }
 
+.superpeanut-quick-match.is-loading {
+  border-color: #ded8ca !important;
+  background: #f7f4ed !important;
+}
+
+.superpeanut-quick-match.is-loading .superpeanut-quick-score {
+  background: #ebe5d8 !important;
+  color: #756b59 !important;
+  font-size: 13px !important;
+  animation: superpeanut-list-thinking 1.15s ease-in-out infinite alternate !important;
+}
+
+@keyframes superpeanut-list-thinking {
+  from { opacity: 0.48; transform: scale(0.94); }
+  to { opacity: 1; transform: scale(1); }
+}
+
 @media (prefers-color-scheme: dark) {
   .superpeanut-quick-match {
     border-color: #3a5145 !important;
@@ -76,4 +93,10 @@
   .superpeanut-quick-role { color: #edf3ee !important; }
   .superpeanut-quick-match.is-strong { border-color: #4f745a !important; background: #223126 !important; }
   .superpeanut-quick-match.is-strong .superpeanut-quick-score { background: #355840 !important; color: #b7e3bf !important; }
+  .superpeanut-quick-match.is-loading { border-color: #514d43 !important; background: #292720 !important; }
+  .superpeanut-quick-match.is-loading .superpeanut-quick-score { background: #413d33 !important; color: #ddd4c2 !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .superpeanut-quick-match.is-loading .superpeanut-quick-score { animation: none !important; }
 }

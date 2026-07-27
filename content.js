@@ -3,7 +3,6 @@
   const AGENT_ENDPOINT = "https://sany-agent-temp.racoonn.me";
   const HC_SORT_KEY = "superpeanut_hc_sort";
   const PET_POSITION_KEY = "superpeanut_pet_position";
-  const QUICK_MATCH_THRESHOLD = 62;
   const PEANUT_SPRITESHEET = chrome.runtime.getURL("assets/peanut-spritesheet.webp");
   const MOCHI_RUNNING = chrome.runtime.getURL("assets/mochi-running.webp");
   const MOCHI_IDLE = chrome.runtime.getURL("assets/mochi-idle.webp");
@@ -99,6 +98,9 @@
   }
 
   let quickMatchTimer = 0;
+  let listMatchSignature = "";
+  let listMatchRequestId = 0;
+  let listMatchController = null;
 
   function quickRoleFingerprint() {
     let hash = 5381;
@@ -112,6 +114,7 @@
   function clearQuickMatches() {
     document.querySelectorAll(".superpeanut-quick-match").forEach((element) => element.remove());
     document.querySelectorAll("[data-superpeanut-quick-signature]").forEach((element) => delete element.dataset.superpeanutQuickSignature);
+    listMatchSignature = "";
   }
 
   function visibleSearchCandidates() {
@@ -134,52 +137,94 @@
     return [...cards.values()].map(({ card, link, profileUrl }) => {
       const paragraphs = [...link.querySelectorAll("p")].map((element) => element.innerText.trim()).filter(Boolean);
       const name = paragraphs[0]?.replace(/\s*[•·]\s*\d+(?:st|nd|rd|th|\+).*$/i, "").trim() || "候选人";
+      const values = paragraphs.map((value) => String(value || "").trim()).filter(Boolean);
+      const intro = values.slice(3).filter((value) => !/mutual connection|共同联系人|共同聯絡人|^connect$|^message$|^follow$/i.test(value)).join(" ");
       return {
         card,
         profileUrl,
-        candidate: globalThis.SuperPeanutQuickMatch.candidateFromSearchText(name, paragraphs),
+        candidate: {
+          profileUrl,
+          name,
+          position: values[1] || "",
+          location: values[2] || "",
+          intro,
+        },
       };
-    }).filter((item) => item.candidate.headline && item.candidate.location);
+    }).filter((item) => item.candidate.position && item.candidate.location);
   }
 
-  function refreshPeopleSearchMatches() {
-    if (!globalThis.SuperPeanutQuickMatch?.isPeopleSearchPath(window.location.pathname)) {
+  function renderListMatchBadge(item, match = null, loading = false) {
+    item.card.querySelector(":scope > .superpeanut-quick-match")?.remove();
+    const badge = document.createElement("div");
+    badge.className = `superpeanut-quick-match${loading ? " is-loading" : Number(match?.score) >= 78 ? " is-strong" : ""}`;
+    badge.setAttribute("aria-label", loading ? "Peanut 正在进行列表初筛" : `Agent 初筛 ${match.score} 分，${match.roleTitle}`);
+    badge.title = loading ? "正在根据职位、地点和 LinkedIn 介绍进行批量判断" : String(match.reason || "Agent 列表初筛结果");
+    const score = document.createElement("strong");
+    score.className = "superpeanut-quick-score";
+    score.textContent = loading ? "AI" : String(match.score);
+    const copy = document.createElement("span");
+    copy.className = "superpeanut-quick-copy";
+    const label = document.createElement("span");
+    label.className = "superpeanut-quick-label";
+    label.textContent = loading ? "Peanut 正在初筛" : "Peanut List Match";
+    const role = document.createElement("span");
+    role.className = "superpeanut-quick-role";
+    role.textContent = loading ? "职位 · 地点 · 介绍" : match.roleTitle;
+    copy.append(label, role);
+    badge.append(score, copy);
+    item.card.prepend(badge);
+  }
+
+  async function refreshPeopleSearchMatches() {
+    if (!/^\/search\/results\/people(?:\/|$)/.test(window.location.pathname)) {
+      listMatchRequestId += 1;
+      listMatchController?.abort();
+      clearQuickMatches();
+      return;
+    }
+    const items = visibleSearchCandidates();
+    if (!items.length || !state.hcs.length) {
+      listMatchRequestId += 1;
+      listMatchController?.abort();
       clearQuickMatches();
       return;
     }
     const roleFingerprint = quickRoleFingerprint();
-    for (const item of visibleSearchCandidates()) {
-      const signature = `${item.profileUrl}|${item.candidate.headline}|${item.candidate.location}|${item.candidate.description}|${roleFingerprint}`;
-      if (item.card.dataset.superpeanutQuickSignature === signature) continue;
-      item.card.querySelector(":scope > .superpeanut-quick-match")?.remove();
-      item.card.dataset.superpeanutQuickSignature = signature;
-      const match = globalThis.SuperPeanutQuickMatch.matchCandidateToRoles(item.candidate, state.hcs);
-      if (!match || match.score < QUICK_MATCH_THRESHOLD) continue;
-
-      const badge = document.createElement("div");
-      badge.className = `superpeanut-quick-match${match.score >= 78 ? " is-strong" : ""}`;
-      badge.setAttribute("aria-label", `初步匹配 ${match.score} 分，${match.roleTitle}`);
-      badge.title = "仅根据当前搜索页可见的职位、摘要和地点进行初筛";
-      const score = document.createElement("strong");
-      score.className = "superpeanut-quick-score";
-      score.textContent = String(match.score);
-      const copy = document.createElement("span");
-      copy.className = "superpeanut-quick-copy";
-      const label = document.createElement("span");
-      label.className = "superpeanut-quick-label";
-      label.textContent = "SuperPeanut 初筛";
-      const role = document.createElement("span");
-      role.className = "superpeanut-quick-role";
-      role.textContent = match.roleTitle;
-      copy.append(label, role);
-      badge.append(score, copy);
-      item.card.prepend(badge);
+    const signature = `${roleFingerprint}|${items.map((item) => `${item.profileUrl}|${item.candidate.position}|${item.candidate.location}|${item.candidate.intro}`).join("||")}`;
+    if (signature === listMatchSignature) return;
+    listMatchSignature = signature;
+    const requestId = ++listMatchRequestId;
+    listMatchController?.abort();
+    listMatchController = new AbortController();
+    clearQuickMatches();
+    listMatchSignature = signature;
+    items.forEach((item) => renderListMatchBadge(item, null, true));
+    try {
+      const response = await fetch(`${AGENT_ENDPOINT}/list-match`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ candidates: items.map((item) => item.candidate), roles: state.hcs }),
+        signal: listMatchController.signal,
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || `List Match Agent 返回 ${response.status}`);
+      if (requestId !== listMatchRequestId) return;
+      const matches = new Map((Array.isArray(payload.matches) ? payload.matches : []).map((match) => [String(match.profileUrl || "").replace(/\/$/, ""), match]));
+      for (const item of items) {
+        const match = matches.get(item.profileUrl.replace(/\/$/, ""));
+        item.card.querySelector(":scope > .superpeanut-quick-match")?.remove();
+        if (match?.matched && match.roleTitle) renderListMatchBadge(item, match, false);
+      }
+    } catch (error) {
+      if (error?.name === "AbortError" || requestId !== listMatchRequestId) return;
+      items.forEach((item) => item.card.querySelector(":scope > .superpeanut-quick-match")?.remove());
+      console.warn("SuperPeanut List Match Agent failed", error);
     }
   }
 
   function queuePeopleSearchMatches() {
     window.clearTimeout(quickMatchTimer);
-    quickMatchTimer = window.setTimeout(refreshPeopleSearchMatches, 220);
+    quickMatchTimer = window.setTimeout(() => void refreshPeopleSearchMatches(), 500);
   }
 
   function firstText(selectors) {
