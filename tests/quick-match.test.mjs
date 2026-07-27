@@ -59,6 +59,35 @@ test("selects the matching country, function, and product line", async () => {
   assert.ok(result.score >= 80);
 });
 
+test("recognizes a road machinery brand when the search result omits product details", async () => {
+  const matcher = await loadMatcher();
+  const result = matcher.matchCandidateToRoles(
+    { name: "Gustavo Ciapanna", headline: "Area Sales Manager Southern Cone en Ammann Group", location: "Argentina", description: "" },
+    [{ ...baseRole, id: "ar-road", title: "Sales Manager (混凝土+路机)", location: "阿根廷", note: "路机销售" }],
+  );
+  assert.equal(result.roleId, "ar-road");
+  assert.ok(result.score >= 80);
+});
+
+test("keeps a likely match when product evidence is absent on the search page", async () => {
+  const matcher = await loadMatcher();
+  const result = matcher.matchCandidateToRoles(
+    { name: "Lucia", headline: "Regional Sales Manager", location: "Argentina", description: "" },
+    [{ ...baseRole, id: "ar-road", title: "路机销售经理", location: "阿根廷", note: "路机销售" }],
+  );
+  assert.equal(result.roleId, "ar-road");
+  assert.ok(result.score >= 62);
+});
+
+test("rejects an explicitly conflicting product line", async () => {
+  const matcher = await loadMatcher();
+  const result = matcher.matchCandidateToRoles(
+    { name: "Lucia", headline: "Mining Equipment Sales Manager", location: "Argentina", description: "Mining trucks" },
+    [{ ...baseRole, id: "ar-road", title: "路机销售经理", location: "阿根廷", note: "路机销售" }],
+  );
+  assert.equal(result, null);
+});
+
 test("does not let a broad region override an explicit different country", async () => {
   const matcher = await loadMatcher();
   const result = matcher.matchCandidateToRoles(
