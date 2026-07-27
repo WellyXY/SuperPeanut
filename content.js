@@ -1,6 +1,5 @@
 (async function () {
-  // This local broker invokes the signed-in Codex CLI on this Mac. Keeping it
-  // on loopback prevents the candidate data and agent endpoint being public.
+  // The public tunnel forwards requests to the signed-in local Codex broker.
   const AGENT_ENDPOINT = "https://sany-agent-temp.racoonn.me";
   const HC_SORT_KEY = "superpeanut_hc_sort";
   const PET_POSITION_KEY = "superpeanut_pet_position";
@@ -1055,7 +1054,11 @@
   }
 
   async function refreshData({ rescan = false } = {}) {
-    [state.hcs, state.history, state.agentMessages] = await Promise.all([SanyStore.getHcs(), SanyStore.getHistory(), SanyStore.getAgentMessages()]);
+    try {
+      [state.hcs, state.history, state.agentMessages] = await Promise.all([SanyStore.getHcs(), SanyStore.getHistory(), SanyStore.getAgentMessages()]);
+    } catch (error) {
+      state.networkNotice = `数据服务暂不可用：${error?.message || "连接失败"}。Peanut 仍可打开，请稍后重试。`;
+    }
     if (rescan || !state.candidate) state.candidate = scanCandidate();
     render();
   }

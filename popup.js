@@ -2,8 +2,13 @@ const count = document.querySelector("#hc-count");
 const message = document.querySelector("#message");
 
 async function updateCount() {
-  const hcs = await SanyStore.getHcs();
-  count.textContent = hcs.length;
+  try {
+    const hcs = await SanyStore.getHcs();
+    count.textContent = hcs.length;
+  } catch (error) {
+    count.textContent = "离线";
+    message.textContent = `数据服务暂不可用：${error?.message || "连接失败"}`;
+  }
 }
 
 document.querySelector("#open-panel").addEventListener("click", async () => {

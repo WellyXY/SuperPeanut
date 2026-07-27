@@ -170,11 +170,9 @@ async function writeMessages(client, userId, messages) {
 }
 
 async function readState(client, userId) {
-  const [hcResult, historyResult, messageResult] = await Promise.all([
-    client.query("SELECT payload FROM hcs WHERE user_id = $1 ORDER BY sort_order ASC, created_at ASC", [userId]),
-    client.query("SELECT record FROM match_history WHERE user_id = $1 ORDER BY created_at DESC LIMIT 200", [userId]),
-    client.query("SELECT payload FROM agent_messages WHERE user_id = $1 ORDER BY position ASC", [userId]),
-  ]);
+  const hcResult = await client.query("SELECT payload FROM hcs WHERE user_id = $1 ORDER BY sort_order ASC, created_at ASC", [userId]);
+  const historyResult = await client.query("SELECT record FROM match_history WHERE user_id = $1 ORDER BY created_at DESC LIMIT 200", [userId]);
+  const messageResult = await client.query("SELECT payload FROM agent_messages WHERE user_id = $1 ORDER BY position ASC", [userId]);
   return {
     hcs: hcResult.rows.map((row) => row.payload),
     history: historyResult.rows.map((row) => row.record),
@@ -306,4 +304,3 @@ createServer(async (request, response) => {
     client.release();
   }
 }).listen(PORT, "0.0.0.0", () => console.log(`SuperPeanut storage listening on ${PORT}`));
-

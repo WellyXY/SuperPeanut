@@ -90,6 +90,7 @@ async function extractCvText(file, temp) {
 
 createServer(async (request, response) => {
   if (request.method === "OPTIONS") return send(response, 204, {});
+  if (request.method === "GET" && request.url === "/health") return send(response, 200, { ok: true, mode: "fast" });
   if (request.method !== "POST" || !["/match", "/chat", "/resume", "/role"].includes(request.url)) return send(response, 404, { error: "not found" });
   let body = "";
   for await (const chunk of request) {
