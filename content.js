@@ -3,6 +3,7 @@
   const AGENT_ENDPOINT = "https://sany-agent-temp.racoonn.me";
   const HC_SORT_KEY = "superpeanut_hc_sort";
   const PET_POSITION_KEY = "superpeanut_pet_position";
+  const QUICK_MATCH_THRESHOLD = 62;
   const PEANUT_SPRITESHEET = chrome.runtime.getURL("assets/peanut-spritesheet.webp");
   const MOCHI_RUNNING = chrome.runtime.getURL("assets/mochi-running.webp");
   const MOCHI_IDLE = chrome.runtime.getURL("assets/mochi-idle.webp");
@@ -95,6 +96,90 @@
     const style = document.createElement("style");
     style.textContent = css;
     shadow.append(style);
+  }
+
+  let quickMatchTimer = 0;
+
+  function quickRoleFingerprint() {
+    let hash = 5381;
+    for (const role of state.hcs) {
+      const text = `${role.id}|${role.title}|${role.location}|${role.businessUnit}|${role.function}|${role.priority}|${role.updatedAt}|${role.note}`;
+      for (let index = 0; index < text.length; index += 1) hash = (hash * 33) ^ text.charCodeAt(index);
+    }
+    return (hash >>> 0).toString(36);
+  }
+
+  function clearQuickMatches() {
+    document.querySelectorAll(".superpeanut-quick-match").forEach((element) => element.remove());
+    document.querySelectorAll("[data-superpeanut-quick-signature]").forEach((element) => delete element.dataset.superpeanutQuickSignature);
+  }
+
+  function visibleSearchCandidates() {
+    const cards = new Map();
+    for (const link of document.querySelectorAll('main a[href*="/in/"]')) {
+      const card = link.closest('[role="listitem"]');
+      if (!card) continue;
+      let profileUrl = "";
+      try {
+        const url = new URL(link.href, window.location.origin);
+        if (!/^\/in\/[^/]+/.test(url.pathname)) continue;
+        profileUrl = `${url.origin}${url.pathname}`;
+      } catch {
+        continue;
+      }
+      const current = cards.get(card);
+      if (!current || (link.innerText || "").length > (current.link.innerText || "").length) cards.set(card, { card, link, profileUrl });
+    }
+
+    return [...cards.values()].map(({ card, link, profileUrl }) => {
+      const paragraphs = [...link.querySelectorAll("p")].map((element) => element.innerText.trim()).filter(Boolean);
+      const name = paragraphs[0]?.replace(/\s*[•·]\s*\d+(?:st|nd|rd|th|\+).*$/i, "").trim() || "候选人";
+      return {
+        card,
+        profileUrl,
+        candidate: globalThis.SuperPeanutQuickMatch.candidateFromSearchText(name, paragraphs),
+      };
+    }).filter((item) => item.candidate.headline && item.candidate.location);
+  }
+
+  function refreshPeopleSearchMatches() {
+    if (!globalThis.SuperPeanutQuickMatch?.isPeopleSearchPath(window.location.pathname)) {
+      clearQuickMatches();
+      return;
+    }
+    const roleFingerprint = quickRoleFingerprint();
+    for (const item of visibleSearchCandidates()) {
+      const signature = `${item.profileUrl}|${item.candidate.headline}|${item.candidate.location}|${item.candidate.description}|${roleFingerprint}`;
+      if (item.card.dataset.superpeanutQuickSignature === signature) continue;
+      item.card.querySelector(":scope > .superpeanut-quick-match")?.remove();
+      item.card.dataset.superpeanutQuickSignature = signature;
+      const match = globalThis.SuperPeanutQuickMatch.matchCandidateToRoles(item.candidate, state.hcs);
+      if (!match || match.score < QUICK_MATCH_THRESHOLD) continue;
+
+      const badge = document.createElement("div");
+      badge.className = `superpeanut-quick-match${match.score >= 78 ? " is-strong" : ""}`;
+      badge.setAttribute("aria-label", `初步匹配 ${match.score} 分，${match.roleTitle}`);
+      badge.title = "仅根据当前搜索页可见的职位、摘要和地点进行初筛";
+      const score = document.createElement("strong");
+      score.className = "superpeanut-quick-score";
+      score.textContent = String(match.score);
+      const copy = document.createElement("span");
+      copy.className = "superpeanut-quick-copy";
+      const label = document.createElement("span");
+      label.className = "superpeanut-quick-label";
+      label.textContent = "SuperPeanut 初筛";
+      const role = document.createElement("span");
+      role.className = "superpeanut-quick-role";
+      role.textContent = match.roleTitle;
+      copy.append(label, role);
+      badge.append(score, copy);
+      item.card.prepend(badge);
+    }
+  }
+
+  function queuePeopleSearchMatches() {
+    window.clearTimeout(quickMatchTimer);
+    quickMatchTimer = window.setTimeout(refreshPeopleSearchMatches, 220);
   }
 
   function firstText(selectors) {
@@ -1051,6 +1136,7 @@
     app.className = "app";
     app.innerHTML = `<div class="sany-shell ${state.isOpen ? "is-open" : ""}" style="--pet-x:${pet.x}px;--pet-y:${pet.y}px;--panel-x:${panel.x}px;--panel-y:${panel.y}px"><button class="sany-trigger" data-action="toggle" aria-label="拖动或打开 SuperPeanut"><span class="trigger-pet-pair"><span class="trigger-peanut" aria-hidden="true">${PEANUT_IDLE_FRAMES.map((frame) => `<i style="--peanut-idle-frame:url('${escapeAttribute(frame)}')"></i>`).join("")}</span><span class="trigger-mochi" aria-hidden="true" style="--mochi-idle:url('${escapeAttribute(MOCHI_IDLE)}')"></span></span><span class="trigger-hint">拖动 · 点击打开</span></button><aside class="sany-panel" aria-label="SuperPeanut 面板"><header class="panel-top"><div class="panel-head"><div class="brand"><div class="brand-mark">P</div><div><h1>SuperPeanut</h1><p>LinkedIn 招聘匹配工作台</p></div></div><button class="icon-button" data-action="close" aria-label="收起面板">×</button></div><nav class="tabs" aria-label="功能导航"><button class="tab ${state.tab === "match" ? "is-active" : ""}" data-action="tab" data-tab="match">候选人匹配</button><button class="tab ${state.tab === "hcs" ? "is-active" : ""}" data-action="tab" data-tab="hcs">HC 库</button><button class="tab ${state.tab === "history" ? "is-active" : ""}" data-action="tab" data-tab="history">查询记录</button><button class="tab ${state.tab === "agent" ? "is-active" : ""}" data-action="tab" data-tab="agent">Peanut</button></nav></header><main class="panel-body">${body}</main></aside>${modalHtml()}</div>`;
     shadow.append(app);
+    queuePeopleSearchMatches();
   }
 
   async function refreshData({ rescan = false } = {}) {
@@ -1404,7 +1490,10 @@
     }, 700);
   }
 
-  const pageObserver = new MutationObserver(() => refreshCandidateAfterLinkedInPaint());
+  const pageObserver = new MutationObserver(() => {
+    refreshCandidateAfterLinkedInPaint();
+    queuePeopleSearchMatches();
+  });
   pageObserver.observe(document.documentElement, { childList: true, subtree: true });
   let petResizeTimer;
   window.addEventListener("resize", () => {

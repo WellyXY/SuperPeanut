@@ -1,0 +1,79 @@
+.superpeanut-quick-match {
+  box-sizing: border-box !important;
+  display: grid !important;
+  grid-template-columns: 48px minmax(0, 1fr) !important;
+  align-items: center !important;
+  gap: 10px !important;
+  margin: 10px 12px 2px !important;
+  padding: 9px 11px !important;
+  border: 1px solid #c9dfd0 !important;
+  border-radius: 12px !important;
+  background: #f4f8f2 !important;
+  color: #26332d !important;
+  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+  line-height: 1.25 !important;
+  pointer-events: none !important;
+}
+
+.superpeanut-quick-score {
+  display: grid !important;
+  place-items: center !important;
+  min-height: 38px !important;
+  border-radius: 9px !important;
+  background: #dcebdd !important;
+  color: #2f713f !important;
+  font-size: 18px !important;
+  font-variant-numeric: tabular-nums !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.04em !important;
+}
+
+.superpeanut-quick-copy {
+  min-width: 0 !important;
+}
+
+.superpeanut-quick-label {
+  display: block !important;
+  margin-bottom: 3px !important;
+  color: #587064 !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+}
+
+.superpeanut-quick-role {
+  display: block !important;
+  overflow: hidden !important;
+  color: #26332d !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.superpeanut-quick-match.is-strong {
+  border-color: #a8d1b2 !important;
+  background: #eef7ed !important;
+}
+
+.superpeanut-quick-match.is-strong .superpeanut-quick-score {
+  background: #cce5cf !important;
+  color: #225f32 !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  .superpeanut-quick-match {
+    border-color: #3a5145 !important;
+    background: #202923 !important;
+    color: #edf3ee !important;
+  }
+
+  .superpeanut-quick-score {
+    background: #30483a !important;
+    color: #a9d8b4 !important;
+  }
+
+  .superpeanut-quick-label { color: #9aafa0 !important; }
+  .superpeanut-quick-role { color: #edf3ee !important; }
+  .superpeanut-quick-match.is-strong { border-color: #4f745a !important; background: #223126 !important; }
+  .superpeanut-quick-match.is-strong .superpeanut-quick-score { background: #355840 !important; color: #b7e3bf !important; }
+}
