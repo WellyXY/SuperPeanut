@@ -24,7 +24,7 @@ function send(response, status, value) {
 function runCodex(prompt, outputFile, schema = null, reasoning = "low") {
   return new Promise((resolve, reject) => {
     const startedAt = Date.now();
-    const args = ["exec", "--ephemeral", "--skip-git-repo-check", "-s", "read-only", "-c", `model_reasoning_effort=\"${reasoning}\"`];
+    const args = ["exec", "--ephemeral", "--skip-git-repo-check", "-s", "read-only", "-c", `model_reasoning_effort=\"${reasoning}\"`, "-c", "service_tier=\"fast\"", "-c", "features.fast_mode=true"];
     if (schema) args.push("--output-schema", schema);
     args.push("-o", outputFile, "-");
     const child = spawn("codex", args, { stdio: ["pipe", "ignore", "pipe"] });
@@ -32,7 +32,7 @@ function runCodex(prompt, outputFile, schema = null, reasoning = "low") {
     child.stderr.on("data", (chunk) => { stderr += chunk; });
     child.on("error", reject);
     child.on("close", (code) => {
-      console.log(`[codex] reasoning=${reasoning} elapsed=${((Date.now() - startedAt) / 1000).toFixed(1)}s exit=${code}`);
+      console.log(`[codex] tier=fast reasoning=${reasoning} elapsed=${((Date.now() - startedAt) / 1000).toFixed(1)}s exit=${code}`);
       code === 0 ? resolve() : reject(new Error(stderr || `codex exited ${code}`));
     });
     child.stdin.end(prompt);
