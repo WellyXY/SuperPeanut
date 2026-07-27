@@ -21,8 +21,9 @@ function send(response, status, value) {
   response.end(JSON.stringify(value));
 }
 
-function runCodex(prompt, outputFile, schema = null, reasoning = "medium") {
+function runCodex(prompt, outputFile, schema = null, reasoning = "low") {
   return new Promise((resolve, reject) => {
+    const startedAt = Date.now();
     const args = ["exec", "--ephemeral", "--skip-git-repo-check", "-s", "read-only", "-c", `model_reasoning_effort=\"${reasoning}\"`];
     if (schema) args.push("--output-schema", schema);
     args.push("-o", outputFile, "-");
@@ -30,7 +31,10 @@ function runCodex(prompt, outputFile, schema = null, reasoning = "medium") {
     let stderr = "";
     child.stderr.on("data", (chunk) => { stderr += chunk; });
     child.on("error", reject);
-    child.on("close", (code) => code === 0 ? resolve() : reject(new Error(stderr || `codex exited ${code}`)));
+    child.on("close", (code) => {
+      console.log(`[codex] reasoning=${reasoning} elapsed=${((Date.now() - startedAt) / 1000).toFixed(1)}s exit=${code}`);
+      code === 0 ? resolve() : reject(new Error(stderr || `codex exited ${code}`));
+    });
     child.stdin.end(prompt);
   });
 }
@@ -96,7 +100,7 @@ createServer(async (request, response) => {
         if (cvText.length < 40) throw new Error("无法从 CV 中读取足够文字；请上传可复制文字的 PDF、DOCX 或 TXT");
         const output = join(temp, "candidate.json");
         const prompt = `Extract a recruiter-ready candidate profile from this CV. Use only facts present in the CV. Write all string fields in Simplified Chinese except proper nouns. Do not infer or estimate age, nationality, ethnicity, gender, disability, family status, compensation, language proficiency, or missing dates. If a fact is absent, use an empty string or null. careerYears may be computed only from explicit employment dates, otherwise null. Keep evidenceText factual and concise.\n\nCV:\n${cvText.slice(0, 50000)}`;
-        await runCodex(prompt, output, CV_SCHEMA, "medium");
+        await runCodex(prompt, output, CV_SCHEMA, "low");
         const result = JSON.parse(await readFile(output, "utf8"));
         const candidate = result.candidate;
         candidate.url = "";
@@ -139,7 +143,7 @@ Produce a recruiter-ready decision memo using this visible, auditable framework 
 Required report shape within the schema: summary is one direct decision conclusion of at most 45 Chinese characters. candidateOverview is the factual profile image: industry experience, current title/company, education, and current Base when available (do not estimate or display age). highlights must cover the best available evidence under concise labels such as 行业经验总结, 最近一份工作的优势, 过往经历加分点, 教育背景, Base 地点分析. requirementFit is the auditable hard-gate and key-requirement table; include location first, then only material items such as language, product line, customer type, stability, brand pedigree, and seniority. Use only 已验证 / 部分验证 / 待确认 / 不匹配 and state the evidence or missing fact. keyVariable names the one decision-critical uncertainty or blocker. compensationAssessment says only verified information; otherwise say it is unassessed and name the exact total-compensation / title calibration question. recommendation is an unambiguous recruiter action. nextSteps gives 2–4 phone-screen questions in sequence: hard gate, motivation, total compensation/title, then business capability where applicable.
 
 Every report MUST include two tags using exactly the enum values in the schema. roleMatchTag is the value only, never a label or sentence: 直接匹配, 可迁移, 需核实, or 匹配较弱. locationMatchTag must be 地点一致 when a report is returned; never use 可通勤, 需要搬迁, or 待确认 unless explicit evidence supports it, and never return a report with an unverified location. Do not invent facts. Every evidence item must identify a concrete fact from the supplied profile. Put absent or unverified JD requirements in risks, never evidence. Treat location, domain/functional fit, seniority, and transferable leadership separately. A score is a recruiter prioritization signal, not a hiring decision. Age, graduation-derived age, nationality, gender, ethnicity, disability, and other protected attributes must never affect the score, ranking, or verdict. Do not calculate, estimate, or display age. Where profile information is missing, say unknown and recommend an interview check. Use the exact supplied roleId values only.\n\nCandidate:\n${JSON.stringify(input.candidate)}\n\nRoles:\n${JSON.stringify(input.roles)}`;
-    await runCodex(prompt, output, SCHEMA, "medium");
+    await runCodex(prompt, output, SCHEMA, "low");
     const result = JSON.parse(await readFile(output, "utf8"));
     await rm(temp, { recursive: true, force: true });
     send(response, 200, result);
