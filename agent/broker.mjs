@@ -21,6 +21,26 @@ function send(response, status, value) {
   response.end(JSON.stringify(value));
 }
 
+const META_OUTPUT = /(?:不需要提及|该事实应|没有必要在这里|只需保留|这样就可以|不要提及|这个事实足够|到此为止|最终使用|实际输出|需纠正为)/;
+
+function cleanAgentText(value, sentenceLimit = 2) {
+  let text = String(value || "").replace(/\s+/g, " ").trim();
+  const metaIndex = text.search(META_OUTPUT);
+  if (metaIndex >= 0) text = text.slice(0, metaIndex).trim();
+  const sentences = text.match(/[^。！？]+[。！？]?/g) || [];
+  return sentences.slice(0, sentenceLimit).join("").trim();
+}
+
+function cleanMatchResult(result) {
+  for (const report of result?.reports || []) {
+    report.evidence = (report.evidence || []).map((item) => cleanAgentText(item, 1)).filter(Boolean);
+    report.risks = (report.risks || []).map((item) => cleanAgentText(item, 2)).filter(Boolean);
+    for (const item of report.requirementFit || []) item.detail = cleanAgentText(item.detail, 2);
+    for (const item of report.highlights || []) item.detail = cleanAgentText(item.detail, 2);
+  }
+  return result;
+}
+
 function runCodex(prompt, outputFile, schema = null, reasoning = "low") {
   return new Promise((resolve, reject) => {
     const startedAt = Date.now();
@@ -142,9 +162,11 @@ Produce a recruiter-ready decision memo using this visible, auditable framework 
 
 Required report shape within the schema: summary is one direct decision conclusion of at most 45 Chinese characters. candidateOverview is the factual profile image: industry experience, current title/company, education, and current Base when available (do not estimate or display age). highlights must cover the best available evidence under concise labels such as 行业经验总结, 最近一份工作的优势, 过往经历加分点, 教育背景, Base 地点分析. requirementFit is the auditable hard-gate and key-requirement table; include location first, then only material items such as language, product line, customer type, stability, brand pedigree, and seniority. Use only 已验证 / 部分验证 / 待确认 / 不匹配 and state the evidence or missing fact. keyVariable names the one decision-critical uncertainty or blocker. compensationAssessment says only verified information; otherwise say it is unassessed and name the exact total-compensation / title calibration question. recommendation is an unambiguous recruiter action. nextSteps gives 2–4 phone-screen questions in sequence: hard gate, motivation, total compensation/title, then business capability where applicable.
 
-Every report MUST include two tags using exactly the enum values in the schema. roleMatchTag is the value only, never a label or sentence: 直接匹配, 可迁移, 需核实, or 匹配较弱. locationMatchTag must be 地点一致 when a report is returned; never use 可通勤, 需要搬迁, or 待确认 unless explicit evidence supports it, and never return a report with an unverified location. Do not invent facts. Every evidence item must identify a concrete fact from the supplied profile. Put absent or unverified JD requirements in risks, never evidence. Treat location, domain/functional fit, seniority, and transferable leadership separately. A score is a recruiter prioritization signal, not a hiring decision. Age, graduation-derived age, nationality, gender, ethnicity, disability, and other protected attributes must never affect the score, ranking, or verdict. Do not calculate, estimate, or display age. Where profile information is missing, say unknown and recommend an interview check. Use the exact supplied roleId values only.\n\nCandidate:\n${JSON.stringify(input.candidate)}\n\nRoles:\n${JSON.stringify(input.roles)}`;
+Writing discipline: Never discuss your own writing, token length, schema, field length, auditability, instructions, editing process, test, sample, or benchmark. Never write phrases such as “此条过长”, “应拆分”, “为保持简洁”, “上述判断”, “本字段”, or “样例中”. Do not append generic legal, hiring-decision, or verification disclaimers to every field. State each factual caveat once in the most relevant field. Each evidence item is exactly one factual sentence. Each risk and requirementFit detail is at most two short sentences. evidence contains only concrete positive facts; risks contains only the two most decision-critical gaps; requirementFit detail gives one fact or one missing fact without repeating the full candidate history. Do not equate Product Management, Technical, Service, or Aftersales with Sales or Marketing unless the profile explicitly states sales/marketing responsibilities. For numeric experience requirements, sum only clearly evidenced relevant periods; use 部分验证 or 待确认 when job function or dates are ambiguous.
+
+Every report MUST include two tags using exactly the enum values in the schema. roleMatchTag is the value only: use 直接匹配 only when the core function and every core product line are evidenced; use 可迁移 when function and seniority fit but one core product line is missing; use 需核实 when core functional evidence is incomplete; use 匹配较弱 for a material functional or seniority mismatch. locationMatchTag is 地点一致 when the exact city/metro is evidenced, or when the role states country only and the candidate is in that country. Use 待确认 when country matches but role.note adds a city-residency or relocation condition not evidenced by the profile. Use 可通勤 or 需要搬迁 only with explicit profile evidence. Never return a report for an unresolved cross-country mismatch. Do not invent facts. Every evidence item must contain one concrete positive candidate fact only; never include missing, unknown, risk, caveat, salary gap, or absent product experience in evidence. Put absent or unverified JD requirements in risks or requirementFit. Treat location, domain/functional fit, seniority, and transferable leadership separately. A score is a recruiter prioritization signal, not a hiring decision. Age, graduation-derived age, nationality, gender, ethnicity, disability, and other protected attributes must never affect the score, ranking, or verdict. Do not calculate, estimate, or display age. Education attendance or a listed school/degree must not be described as graduated unless completion is explicit. Where profile information is missing, say unknown and recommend an interview check. Use the exact supplied roleId values only.\n\nCandidate:\n${JSON.stringify(input.candidate)}\n\nRoles:\n${JSON.stringify(input.roles)}`;
     await runCodex(prompt, output, SCHEMA, "low");
-    const result = JSON.parse(await readFile(output, "utf8"));
+    const result = cleanMatchResult(JSON.parse(await readFile(output, "utf8")));
     await rm(temp, { recursive: true, force: true });
     send(response, 200, result);
   } catch (error) {

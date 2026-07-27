@@ -12,8 +12,8 @@
           "score": { "type": "integer", "minimum": 0, "maximum": 100 },
           "verdict": { "type": "string" },
           "summary": { "type": "string" },
-          "evidence": { "type": "array", "maxItems": 2, "items": { "type": "string" } },
-          "risks": { "type": "array", "maxItems": 2, "items": { "type": "string" } },
+          "evidence": { "type": "array", "maxItems": 2, "items": { "type": "string", "maxLength": 140 } },
+          "risks": { "type": "array", "maxItems": 2, "items": { "type": "string", "maxLength": 140 } },
           "roleMatchTag": { "type": "string", "enum": ["直接匹配", "可迁移", "需核实", "匹配较弱"] },
           "locationMatchTag": { "type": "string", "enum": ["地点一致", "可通勤", "需要搬迁", "待确认"] },
           "locationAssessment": { "type": "string" },
@@ -26,7 +26,7 @@
             "items": {
               "type": "object",
               "required": ["title", "detail"],
-              "properties": { "title": { "type": "string" }, "detail": { "type": "string" } },
+              "properties": { "title": { "type": "string" }, "detail": { "type": "string", "maxLength": 220 } },
               "additionalProperties": false
             }
           },
@@ -40,7 +40,7 @@
               "properties": {
                 "requirement": { "type": "string" },
                 "status": { "type": "string", "enum": ["已验证", "部分验证", "待确认", "不匹配"] },
-                "detail": { "type": "string" }
+                "detail": { "type": "string", "maxLength": 180 }
               },
               "additionalProperties": false
             }
