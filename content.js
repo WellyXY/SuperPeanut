@@ -97,136 +97,6 @@
     shadow.append(style);
   }
 
-  let quickMatchTimer = 0;
-  let listMatchSignature = "";
-  let listMatchRequestId = 0;
-  let listMatchController = null;
-
-  function quickRoleFingerprint() {
-    let hash = 5381;
-    for (const role of state.hcs) {
-      const text = `${role.id}|${role.title}|${role.location}|${role.businessUnit}|${role.function}|${role.priority}|${role.updatedAt}|${role.note}`;
-      for (let index = 0; index < text.length; index += 1) hash = (hash * 33) ^ text.charCodeAt(index);
-    }
-    return (hash >>> 0).toString(36);
-  }
-
-  function clearQuickMatches() {
-    document.querySelectorAll(".superpeanut-quick-match").forEach((element) => element.remove());
-    document.querySelectorAll("[data-superpeanut-quick-signature]").forEach((element) => delete element.dataset.superpeanutQuickSignature);
-    listMatchSignature = "";
-  }
-
-  function visibleSearchCandidates() {
-    const cards = new Map();
-    for (const link of document.querySelectorAll('main a[href*="/in/"]')) {
-      const card = link.closest('[role="listitem"]');
-      if (!card) continue;
-      let profileUrl = "";
-      try {
-        const url = new URL(link.href, window.location.origin);
-        if (!/^\/in\/[^/]+/.test(url.pathname)) continue;
-        profileUrl = `${url.origin}${url.pathname}`;
-      } catch {
-        continue;
-      }
-      const current = cards.get(card);
-      if (!current || (link.innerText || "").length > (current.link.innerText || "").length) cards.set(card, { card, link, profileUrl });
-    }
-
-    return [...cards.values()].map(({ card, link, profileUrl }) => {
-      const paragraphs = [...link.querySelectorAll("p")].map((element) => element.innerText.trim()).filter(Boolean);
-      const name = paragraphs[0]?.replace(/\s*[•·]\s*\d+(?:st|nd|rd|th|\+).*$/i, "").trim() || "候选人";
-      const values = paragraphs.map((value) => String(value || "").trim()).filter(Boolean);
-      const intro = values.slice(3).filter((value) => !/mutual connection|共同联系人|共同聯絡人|^connect$|^message$|^follow$/i.test(value)).join(" ");
-      return {
-        card,
-        profileUrl,
-        candidate: {
-          profileUrl,
-          name,
-          position: values[1] || "",
-          location: values[2] || "",
-          intro,
-        },
-      };
-    }).filter((item) => item.candidate.position && item.candidate.location);
-  }
-
-  function renderListMatchBadge(item, match = null, loading = false) {
-    item.card.querySelector(":scope > .superpeanut-quick-match")?.remove();
-    const badge = document.createElement("div");
-    badge.className = `superpeanut-quick-match${loading ? " is-loading" : Number(match?.score) >= 78 ? " is-strong" : ""}`;
-    badge.setAttribute("aria-label", loading ? "Peanut 正在进行列表初筛" : `Agent 初筛 ${match.score} 分，${match.roleTitle}`);
-    badge.title = loading ? "正在根据职位、地点和 LinkedIn 介绍进行批量判断" : String(match.reason || "Agent 列表初筛结果");
-    const score = document.createElement("strong");
-    score.className = "superpeanut-quick-score";
-    score.textContent = loading ? "AI" : String(match.score);
-    const copy = document.createElement("span");
-    copy.className = "superpeanut-quick-copy";
-    const label = document.createElement("span");
-    label.className = "superpeanut-quick-label";
-    label.textContent = loading ? "Peanut 正在初筛" : "Peanut List Match";
-    const role = document.createElement("span");
-    role.className = "superpeanut-quick-role";
-    role.textContent = loading ? "职位 · 地点 · 介绍" : match.roleTitle;
-    copy.append(label, role);
-    badge.append(score, copy);
-    item.card.prepend(badge);
-  }
-
-  async function refreshPeopleSearchMatches() {
-    if (!/^\/search\/results\/people(?:\/|$)/.test(window.location.pathname)) {
-      listMatchRequestId += 1;
-      listMatchController?.abort();
-      clearQuickMatches();
-      return;
-    }
-    const items = visibleSearchCandidates();
-    if (!items.length || !state.hcs.length) {
-      listMatchRequestId += 1;
-      listMatchController?.abort();
-      clearQuickMatches();
-      return;
-    }
-    const roleFingerprint = quickRoleFingerprint();
-    const signature = `${roleFingerprint}|${items.map((item) => `${item.profileUrl}|${item.candidate.position}|${item.candidate.location}|${item.candidate.intro}`).join("||")}`;
-    if (signature === listMatchSignature) return;
-    listMatchSignature = signature;
-    const requestId = ++listMatchRequestId;
-    listMatchController?.abort();
-    listMatchController = new AbortController();
-    clearQuickMatches();
-    listMatchSignature = signature;
-    items.forEach((item) => renderListMatchBadge(item, null, true));
-    try {
-      const response = await fetch(`${AGENT_ENDPOINT}/list-match`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ candidates: items.map((item) => item.candidate), roles: state.hcs }),
-        signal: listMatchController.signal,
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || `List Match Agent 返回 ${response.status}`);
-      if (requestId !== listMatchRequestId) return;
-      const matches = new Map((Array.isArray(payload.matches) ? payload.matches : []).map((match) => [String(match.profileUrl || "").replace(/\/$/, ""), match]));
-      for (const item of items) {
-        const match = matches.get(item.profileUrl.replace(/\/$/, ""));
-        item.card.querySelector(":scope > .superpeanut-quick-match")?.remove();
-        if (match?.matched && match.roleTitle) renderListMatchBadge(item, match, false);
-      }
-    } catch (error) {
-      if (error?.name === "AbortError" || requestId !== listMatchRequestId) return;
-      items.forEach((item) => item.card.querySelector(":scope > .superpeanut-quick-match")?.remove());
-      console.warn("SuperPeanut List Match Agent failed", error);
-    }
-  }
-
-  function queuePeopleSearchMatches() {
-    window.clearTimeout(quickMatchTimer);
-    quickMatchTimer = window.setTimeout(() => void refreshPeopleSearchMatches(), 500);
-  }
-
   function firstText(selectors) {
     for (const selector of selectors) {
       const element = document.querySelector(selector);
@@ -1181,7 +1051,6 @@
     app.className = "app";
     app.innerHTML = `<div class="sany-shell ${state.isOpen ? "is-open" : ""}" style="--pet-x:${pet.x}px;--pet-y:${pet.y}px;--panel-x:${panel.x}px;--panel-y:${panel.y}px"><button class="sany-trigger" data-action="toggle" aria-label="拖动或打开 SuperPeanut"><span class="trigger-pet-pair"><span class="trigger-peanut" aria-hidden="true">${PEANUT_IDLE_FRAMES.map((frame) => `<i style="--peanut-idle-frame:url('${escapeAttribute(frame)}')"></i>`).join("")}</span><span class="trigger-mochi" aria-hidden="true" style="--mochi-idle:url('${escapeAttribute(MOCHI_IDLE)}')"></span></span><span class="trigger-hint">拖动 · 点击打开</span></button><aside class="sany-panel" aria-label="SuperPeanut 面板"><header class="panel-top"><div class="panel-head"><div class="brand"><div class="brand-mark">P</div><div><h1>SuperPeanut</h1><p>LinkedIn 招聘匹配工作台</p></div></div><button class="icon-button" data-action="close" aria-label="收起面板">×</button></div><nav class="tabs" aria-label="功能导航"><button class="tab ${state.tab === "match" ? "is-active" : ""}" data-action="tab" data-tab="match">候选人匹配</button><button class="tab ${state.tab === "hcs" ? "is-active" : ""}" data-action="tab" data-tab="hcs">HC 库</button><button class="tab ${state.tab === "history" ? "is-active" : ""}" data-action="tab" data-tab="history">查询记录</button><button class="tab ${state.tab === "agent" ? "is-active" : ""}" data-action="tab" data-tab="agent">Peanut</button></nav></header><main class="panel-body">${body}</main></aside>${modalHtml()}</div>`;
     shadow.append(app);
-    queuePeopleSearchMatches();
   }
 
   async function refreshData({ rescan = false } = {}) {
@@ -1535,10 +1404,7 @@
     }, 700);
   }
 
-  const pageObserver = new MutationObserver(() => {
-    refreshCandidateAfterLinkedInPaint();
-    queuePeopleSearchMatches();
-  });
+  const pageObserver = new MutationObserver(() => refreshCandidateAfterLinkedInPaint());
   pageObserver.observe(document.documentElement, { childList: true, subtree: true });
   let petResizeTimer;
   window.addEventListener("resize", () => {

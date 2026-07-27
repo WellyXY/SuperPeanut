@@ -9,7 +9,6 @@ const ROOT = new URL("..", import.meta.url).pathname;
 const SCHEMA = join(ROOT, "agent", "match-schema.json");
 const CV_SCHEMA = join(ROOT, "agent", "cv-schema.json");
 const ROLE_SCHEMA = join(ROOT, "agent", "role-schema.json");
-const LIST_MATCH_SCHEMA = join(ROOT, "agent", "list-match-schema.json");
 
 function send(response, status, value) {
   response.writeHead(status, {
@@ -92,7 +91,7 @@ async function extractCvText(file, temp) {
 createServer(async (request, response) => {
   if (request.method === "OPTIONS") return send(response, 204, {});
   if (request.method === "GET" && request.url === "/health") return send(response, 200, { ok: true, mode: "fast" });
-  if (request.method !== "POST" || !["/match", "/list-match", "/chat", "/resume", "/role"].includes(request.url)) return send(response, 404, { error: "not found" });
+  if (request.method !== "POST" || !["/match", "/chat", "/resume", "/role"].includes(request.url)) return send(response, 404, { error: "not found" });
   let body = "";
   for await (const chunk of request) {
     body += chunk;
@@ -150,36 +149,6 @@ createServer(async (request, response) => {
       const answer = (await readFile(output, "utf8")).trim();
       await rm(temp, { recursive: true, force: true });
       return send(response, 200, { answer: answer || "目前沒有足夠資料回答這個問題。" });
-    }
-    if (request.url === "/list-match") {
-      const candidates = Array.isArray(input?.candidates) ? input.candidates.slice(0, 25) : [];
-      const roles = Array.isArray(input?.roles) ? input.roles : [];
-      if (!candidates.length || !roles.length) throw new Error("candidates and roles are required");
-      const temp = await mkdtemp(join(tmpdir(), "sany-list-match-"));
-      try {
-        const output = join(temp, "result.json");
-        const prompt = `You are the List Match Agent in a recruiter copilot. Perform one fast preliminary pass over EVERY supplied LinkedIn search-result candidate against the COMPLETE supplied HC list. This is a list-screening task, not a full candidate report.
-
-Judge each candidate primarily from exactly three visible signals:
-1. position: core job function, seniority, current company, and any explicit product or industry clue;
-2. location: compare against role.location and all location scope or exceptions in role.note;
-3. intro: use the one-line LinkedIn search description only as supporting evidence for industry, product, customer, or responsibility fit.
-
-For every candidate return exactly one result using the same profileUrl. Inspect all roles and select at most one best HC. matched=true only when the visible evidence is strong enough that a recruiter should open the profile for deeper review. A missing intro lowers confidence but is not an automatic rejection. An explicit cross-country mismatch is not suitable unless the HC explicitly covers the candidate's country or region. Same broad region alone is not enough when the HC names another country. Never infer relocation, language, age, nationality, ethnicity, gender, education, compensation, or hidden experience.
-
-Score guidance: 85–100 strong visible match; 70–84 worth opening; 55–69 weak or materially unverified; below 55 unsuitable. Set matched=true at 70 or above, or at 65–69 only when position and exact location are both clearly aligned. For unmatched candidates, roleId and roleTitle must be empty strings. reason must be one concise Simplified Chinese sentence of at most 28 Chinese characters stating the decisive visible evidence or mismatch. Use exact supplied role.id values and role.title values only. Do not produce a report, chain-of-thought, runner-up, or protected-attribute inference. Return JSON only through the schema.
-
-Candidates:
-${JSON.stringify(candidates)}
-
-Complete HC list:
-${JSON.stringify(roles)}`;
-        await runCodex(prompt, output, LIST_MATCH_SCHEMA, "low");
-        const result = JSON.parse(await readFile(output, "utf8"));
-        return send(response, 200, result);
-      } finally {
-        await rm(temp, { recursive: true, force: true });
-      }
     }
     if (!input?.candidate?.name || !Array.isArray(input?.roles)) throw new Error("candidate and roles are required");
     const temp = await mkdtemp(join(tmpdir(), "sany-match-"));
