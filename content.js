@@ -1139,7 +1139,7 @@
   async function askAgent(question) {
     const text = String(question || "").trim();
     if (!text || state.isAgentReplying) return;
-    state.agentMessages.push({ role: "user", content: text });
+    state.agentMessages.push({ id: `msg_${crypto.randomUUID()}`, createdAt: new Date().toISOString(), role: "user", content: text });
     state.agentDraft = "";
     state.isAgentReplying = true;
     SanyStore.saveAgentMessages(state.agentMessages).catch(() => null);
@@ -1163,9 +1163,9 @@
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || `agent returned ${response.status}`);
-      state.agentMessages.push({ role: "agent", content: payload.answer || "目前沒有足夠資料回答這個問題。" });
+      state.agentMessages.push({ id: `msg_${crypto.randomUUID()}`, createdAt: new Date().toISOString(), role: "agent", content: payload.answer || "目前沒有足夠資料回答這個問題。" });
     } catch (error) {
-      state.agentMessages.push({ role: "agent", content: `暫時無法回答：${error.message || "本機 Agent 未啟動"}` });
+      state.agentMessages.push({ id: `msg_${crypto.randomUUID()}`, createdAt: new Date().toISOString(), role: "agent", content: `暫時無法回答：${error.message || "本機 Agent 未啟動"}` });
     } finally {
       state.isAgentReplying = false;
       SanyStore.saveAgentMessages(state.agentMessages).catch(() => null);

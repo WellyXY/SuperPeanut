@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { Pool } from "pg";
 
@@ -8,6 +9,7 @@ const pool = new Pool({
   ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : undefined,
 });
 const EMPTY = { hcs: [], history: [], messages: [] };
+const PUBLIC_ROOT = new URL("./public/", import.meta.url);
 
 function workspaceHash(key) {
   return createHash("sha256").update(key).digest("hex");
@@ -23,6 +25,15 @@ function send(response, status, value) {
     "cache-control": "no-store",
   });
   response.end(JSON.stringify(value));
+}
+
+async function sendAsset(response, file, contentType) {
+  const body = await readFile(new URL(file, PUBLIC_ROOT));
+  response.writeHead(200, {
+    "content-type": contentType,
+    "cache-control": file.endsWith(".html") ? "no-store" : "public, max-age=300",
+  });
+  response.end(body);
 }
 
 function workspaceKey(request) {
@@ -158,6 +169,20 @@ async function writeMessages(client, userId, messages) {
   await client.query("DELETE FROM agent_messages WHERE user_id = $1", [userId]);
   for (let index = 0; index < messages.length; index += 1) {
     const message = messages[index] && typeof messages[index] === "object" ? messages[index] : {};
+    const eventId = String(message.id || `legacy_${createHash("sha256").update(`${message.role || ""}|${message.content || ""}`).digest("hex").slice(0, 24)}`);
+    await client.query(`INSERT INTO agent_comment_events (user_id, event_id, role, content, payload, created_at)
+      VALUES ($1,$2,$3,$4,$5::jsonb,$6)
+      ON CONFLICT (user_id, event_id) DO UPDATE SET
+        role = EXCLUDED.role,
+        content = EXCLUDED.content,
+        payload = EXCLUDED.payload`, [
+      userId,
+      eventId,
+      String(message.role || ""),
+      String(message.content || ""),
+      JSON.stringify({ ...message, id: eventId }),
+      validTimestamp(message.createdAt) || new Date().toISOString(),
+    ]);
     await client.query(`INSERT INTO agent_messages (user_id, position, role, content, payload)
       VALUES ($1,$2,$3,$4,$5::jsonb)`, [
       userId,
@@ -167,6 +192,109 @@ async function writeMessages(client, userId, messages) {
       JSON.stringify(message),
     ]);
   }
+}
+
+async function adminSnapshot() {
+  const [dashboardResult, hcsResult, usersResult, matchesResult] = await Promise.all([
+    pool.query(`WITH hc_base AS (
+      SELECT user_id, hc_id,
+        lower(regexp_replace(trim(title), '\\s+', ' ', 'g')) || '|' ||
+        lower(regexp_replace(regexp_replace(trim(location), '[,，;；(（].*$', ''), '\\s+', ' ', 'g')) AS canonical_key
+      FROM hcs
+    )
+    SELECT
+      (SELECT COUNT(*)::int FROM match_history WHERE created_at >= NOW() - INTERVAL '24 hours') AS "matches24h",
+      (SELECT COUNT(*)::int FROM agent_comment_events WHERE role = 'user' AND created_at >= NOW() - INTERVAL '24 hours') AS "agentComments24h",
+      (SELECT COUNT(DISTINCT COALESCE(hb.canonical_key, mh.user_id::text || '|' || mh.matched_hc_id))::int
+        FROM match_history mh
+        LEFT JOIN hc_base hb ON hb.user_id = mh.user_id AND hb.hc_id = mh.matched_hc_id
+        WHERE mh.created_at >= NOW() - INTERVAL '24 hours' AND mh.matched_hc_id IS NOT NULL AND NOT mh.no_fit) AS "matchedHcs24h",
+      (SELECT COUNT(*)::int FROM users) AS "totalUsers",
+      (SELECT COUNT(DISTINCT lower(regexp_replace(trim(title), '\\s+', ' ', 'g')) || '|' ||
+        lower(regexp_replace(regexp_replace(trim(location), '[,，;；(（].*$', ''), '\\s+', ' ', 'g')))::int FROM hcs) AS "uniqueHcs",
+      (SELECT COUNT(*)::int FROM hcs) AS "totalHcInstances",
+      (SELECT COUNT(*)::int FROM match_history) AS "totalMatches"`),
+    pool.query(`WITH hc_base AS (
+      SELECT user_id, hc_id, title, location, business_unit, function_name, region, priority,
+        open_count, note, hiring_manager, release_date,
+        lower(regexp_replace(trim(title), '\\s+', ' ', 'g')) || '|' ||
+        lower(regexp_replace(regexp_replace(trim(location), '[,，;；(（].*$', ''), '\\s+', ' ', 'g')) AS canonical_key
+      FROM hcs
+    )
+    SELECT hb.canonical_key AS "key",
+      MIN(hb.title) AS title,
+      MIN(hb.location) AS location,
+      MIN(hb.business_unit) AS "businessUnit",
+      MIN(hb.function_name) AS function,
+      MIN(hb.region) AS region,
+      (ARRAY_AGG(hb.priority ORDER BY CASE hb.priority WHEN 'SSS' THEN 1 WHEN 'SS' THEN 2 ELSE 3 END))[1] AS priority,
+      MAX(hb.note) AS note,
+      MAX(hb.hiring_manager) AS "hiringManager",
+      MAX(hb.release_date) AS "releaseDate",
+      COUNT(DISTINCT hb.user_id)::int AS "userCount",
+      SUM(hb.open_count)::int AS "totalOpenCount",
+      COUNT(DISTINCT COALESCE(NULLIF(mh.candidate_url, ''), mh.user_id::text || '|' || mh.record_id))::int AS "matchCount",
+      MAX(mh.created_at) AS "lastMatchedAt"
+    FROM hc_base hb
+    LEFT JOIN match_history mh ON mh.user_id = hb.user_id AND mh.matched_hc_id = hb.hc_id AND NOT mh.no_fit
+    GROUP BY hb.canonical_key
+    ORDER BY "matchCount" DESC, priority ASC, title ASC`),
+    pool.query(`WITH hc_counts AS (
+      SELECT user_id, COUNT(*)::int AS hc_count FROM hcs GROUP BY user_id
+    ), match_counts AS (
+      SELECT user_id, COUNT(*)::int AS match_count,
+        COUNT(DISTINCT NULLIF(candidate_url, ''))::int AS candidate_count
+      FROM match_history GROUP BY user_id
+    ), comment_counts AS (
+      SELECT user_id, COUNT(*)::int AS comment_count
+      FROM agent_comment_events WHERE role = 'user' GROUP BY user_id
+    )
+    SELECT u.id,
+      'User ' || lpad(u.id::text, 4, '0') AS label,
+      u.created_at AS "createdAt",
+      u.last_seen_at AS "lastSeenAt",
+      COALESCE(h.hc_count, 0) AS "hcCount",
+      COALESCE(m.match_count, 0) AS "matchCount",
+      COALESCE(m.candidate_count, 0) AS "candidateCount",
+      COALESCE(c.comment_count, 0) AS "agentCommentCount"
+    FROM users u
+    LEFT JOIN hc_counts h ON h.user_id = u.id
+    LEFT JOIN match_counts m ON m.user_id = u.id
+    LEFT JOIN comment_counts c ON c.user_id = u.id
+    ORDER BY u.last_seen_at DESC`),
+    pool.query(`WITH hc_base AS (
+      SELECT user_id, hc_id, title,
+        lower(regexp_replace(trim(title), '\\s+', ' ', 'g')) || '|' ||
+        lower(regexp_replace(regexp_replace(trim(location), '[,，;；(（].*$', ''), '\\s+', ' ', 'g')) AS canonical_key
+      FROM hcs
+    )
+    SELECT mh.record_id AS id,
+      mh.user_id AS "userId",
+      'User ' || lpad(mh.user_id::text, 4, '0') AS "userLabel",
+      mh.candidate_name AS name,
+      mh.candidate_url AS "linkedinUrl",
+      mh.candidate_location AS location,
+      mh.match_score AS score,
+      mh.no_fit AS "noFit",
+      mh.created_at AS "createdAt",
+      COALESCE(mh.candidate->>'headline', '') AS headline,
+      COALESCE(mh.candidate->>'about', mh.candidate#>>'{profile,about}', '') AS introduction,
+      COALESCE(mh.reports->0->>'summary', '') AS summary,
+      COALESCE(mh.reports->0->>'level', '') AS level,
+      COALESCE(hb.title, mh.reports->0#>>'{role,title}', '') AS "matchedHcTitle",
+      COALESCE(hb.canonical_key, '') AS "hcKey"
+    FROM match_history mh
+    LEFT JOIN hc_base hb ON hb.user_id = mh.user_id AND hb.hc_id = mh.matched_hc_id
+    ORDER BY mh.created_at DESC
+    LIMIT 1000`),
+  ]);
+  return {
+    generatedAt: new Date().toISOString(),
+    dashboard: dashboardResult.rows[0],
+    hcs: hcsResult.rows,
+    users: usersResult.rows,
+    matches: matchesResult.rows,
+  };
 }
 
 async function readState(client, userId) {
@@ -236,10 +364,24 @@ async function migrate() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       PRIMARY KEY (user_id, position)
     )`);
+    await client.query(`CREATE TABLE IF NOT EXISTS agent_comment_events (
+      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      event_id TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT '',
+      content TEXT NOT NULL DEFAULT '',
+      payload JSONB NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (user_id, event_id)
+    )`);
+    await client.query(`INSERT INTO agent_comment_events (user_id, event_id, role, content, payload, created_at)
+      SELECT user_id, 'legacy_' || md5(role || '|' || content), role, content, payload, created_at
+      FROM agent_messages
+      ON CONFLICT (user_id, event_id) DO NOTHING`);
     await client.query("CREATE INDEX IF NOT EXISTS hcs_user_release_idx ON hcs (user_id, release_date DESC)");
     await client.query("CREATE INDEX IF NOT EXISTS hcs_user_priority_idx ON hcs (user_id, priority)");
     await client.query("CREATE INDEX IF NOT EXISTS history_user_created_idx ON match_history (user_id, created_at DESC)");
     await client.query("CREATE INDEX IF NOT EXISTS history_candidate_url_idx ON match_history (user_id, candidate_url)");
+    await client.query("CREATE INDEX IF NOT EXISTS agent_events_created_idx ON agent_comment_events (created_at DESC)");
 
     const legacyExists = await client.query("SELECT to_regclass('public.superpeanut_workspaces') AS table_name");
     if (legacyExists.rows[0]?.table_name) {
@@ -265,15 +407,26 @@ async function migrate() {
 await migrate();
 
 createServer(async (request, response) => {
+  const pathname = new URL(request.url || "/", "http://localhost").pathname;
   if (request.method === "OPTIONS") return send(response, 204, {});
-  if (request.method === "GET" && request.url === "/health") {
+  if (request.method === "GET" && (pathname === "/admin" || pathname === "/admin/")) return sendAsset(response, "admin.html", "text/html; charset=utf-8");
+  if (request.method === "GET" && pathname === "/admin.css") return sendAsset(response, "admin.css", "text/css; charset=utf-8");
+  if (request.method === "GET" && pathname === "/admin.js") return sendAsset(response, "admin.js", "text/javascript; charset=utf-8");
+  if (request.method === "GET" && pathname === "/api/admin/snapshot") {
+    try {
+      return send(response, 200, await adminSnapshot());
+    } catch (error) {
+      return send(response, 500, { error: error?.message || "admin query failed" });
+    }
+  }
+  if (request.method === "GET" && pathname === "/health") {
     const result = await pool.query(`SELECT
       (SELECT COUNT(*)::int FROM users) AS users,
       (SELECT COUNT(*)::int FROM hcs) AS hcs,
       (SELECT COUNT(*)::int FROM match_history) AS match_history`);
     return send(response, 200, { ok: true, schemaVersion: 2, tables: result.rows[0] });
   }
-  if (request.method !== "POST" || !["/v1/state/read", "/v1/state/write"].includes(request.url)) {
+  if (request.method !== "POST" || !["/v1/state/read", "/v1/state/write"].includes(pathname)) {
     return send(response, 404, { error: "not found" });
   }
 
@@ -283,7 +436,7 @@ createServer(async (request, response) => {
     await client.query("BEGIN");
     const userId = await resolveUser(client, key);
 
-    if (request.url === "/v1/state/read") {
+    if (pathname === "/v1/state/read") {
       const state = await readState(client, userId);
       await client.query("COMMIT");
       return send(response, 200, { state, updatedAt: new Date().toISOString() });

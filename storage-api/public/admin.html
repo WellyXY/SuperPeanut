@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>SuperPeanut Admin</title>
+  <link rel="stylesheet" href="/admin.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">SP</span><span><strong>SuperPeanut</strong><small>Recruiting operations</small></span></div>
+      <nav aria-label="管理功能">
+        <button data-route="dashboard">Dashboard</button>
+        <button data-route="hcs">HC List</button>
+        <button data-route="users">Users</button>
+        <button data-route="matches">Matched Candidates</button>
+      </nav>
+      <div class="service-state"><span></span><div><strong>Railway connected</strong><small id="generated-at">同步中</small></div></div>
+    </aside>
+    <main>
+      <header class="topbar">
+        <div><p class="kicker">SUPERPEANUT ADMIN</p><h1 id="page-title">Dashboard</h1></div>
+        <div class="top-actions"><label class="search"><span>搜尋</span><input id="global-search" type="search" placeholder="HC、候選人或 User"></label><button class="refresh" id="refresh-button">重新整理</button></div>
+      </header>
+      <section id="app" aria-live="polite"><div class="loading-grid"><i></i><i></i><i></i><i></i></div></section>
+    </main>
+  </div>
+  <script type="module" src="/admin.js"></script>
+</body>
+</html>
