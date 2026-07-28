@@ -9,8 +9,7 @@ const ROOT = new URL("..", import.meta.url).pathname;
 const SCHEMA = join(ROOT, "agent", "match-schema.json");
 const CV_SCHEMA = join(ROOT, "agent", "cv-schema.json");
 const ROLE_SCHEMA = join(ROOT, "agent", "role-schema.json");
-const DEFAULT_MODEL = "gpt-5.6-sol";
-const MATCH_MODEL = "gpt-5.6-luna";
+const AGENT_MODEL = "gpt-5.6-luna";
 
 function send(response, status, value) {
   response.writeHead(status, {
@@ -43,7 +42,7 @@ function cleanMatchResult(result) {
   return result;
 }
 
-function runCodex(prompt, outputFile, schema = null, reasoning = "low", model = DEFAULT_MODEL) {
+function runCodex(prompt, outputFile, schema = null, reasoning = "low", model = AGENT_MODEL) {
   return new Promise((resolve, reject) => {
     const startedAt = Date.now();
     const args = ["exec", "--ephemeral", "--skip-git-repo-check", "-s", "read-only", "-m", model, "-c", `model_reasoning_effort=\"${reasoning}\"`, "-c", "service_tier=\"fast\"", "-c", "features.fast_mode=true"];
@@ -92,7 +91,7 @@ async function extractCvText(file, temp) {
 
 createServer(async (request, response) => {
   if (request.method === "OPTIONS") return send(response, 204, {});
-  if (request.method === "GET" && request.url === "/health") return send(response, 200, { ok: true, mode: "fast", matchModel: MATCH_MODEL });
+  if (request.method === "GET" && request.url === "/health") return send(response, 200, { ok: true, mode: "fast", agentModel: AGENT_MODEL });
   if (request.method !== "POST" || !["/match", "/chat", "/resume", "/role"].includes(request.url)) return send(response, 404, { error: "not found" });
   let body = "";
   for await (const chunk of request) {
@@ -168,7 +167,7 @@ Required report shape within the schema: summary is one direct decision conclusi
 Writing discipline: Never discuss your own writing, token length, schema, field length, auditability, instructions, editing process, test, sample, or benchmark. Never write phrases such as “此条过长”, “应拆分”, “为保持简洁”, “上述判断”, “本字段”, or “样例中”. Do not append generic legal, hiring-decision, or verification disclaimers to every field. State each factual caveat once in the most relevant field. Each evidence item is exactly one factual sentence. Each risk and requirementFit detail is at most two short sentences. evidence contains only concrete positive facts; risks contains only the two most decision-critical gaps; requirementFit detail gives one fact or one missing fact without repeating the full candidate history. Do not equate Product Management, Technical, Service, or Aftersales with Sales or Marketing unless the profile explicitly states sales/marketing responsibilities. For numeric experience requirements, sum only clearly evidenced relevant periods; use 部分验证 or 待确认 when job function or dates are ambiguous.
 
 Every report MUST include two tags using exactly the enum values in the schema. roleMatchTag is the value only: use 直接匹配 only when the core function and every core product line are evidenced; use 可迁移 when function and seniority fit but one core product line is missing; use 需核实 when core functional evidence is incomplete; use 匹配较弱 for a material functional or seniority mismatch. locationMatchTag is 地点一致 when the exact city/metro is evidenced, or when the role states country only and the candidate is in that country. Use 待确认 when country matches but role.note adds a city-residency or relocation condition not evidenced by the profile. Use 可通勤 or 需要搬迁 only with explicit profile evidence. Never return a report for an unresolved cross-country mismatch. Do not invent facts. Every evidence item must contain one concrete positive candidate fact only; never include missing, unknown, risk, caveat, salary gap, or absent product experience in evidence. Put absent or unverified JD requirements in risks or requirementFit. Treat location, domain/functional fit, seniority, and transferable leadership separately. A score is a recruiter prioritization signal, not a hiring decision. Age, graduation-derived age, nationality, gender, ethnicity, disability, and other protected attributes must never affect the score, ranking, or verdict. Do not calculate, estimate, or display age. Education attendance or a listed school/degree must not be described as graduated unless completion is explicit. Where profile information is missing, say unknown and recommend an interview check. Use the exact supplied roleId values only.\n\nCandidate:\n${JSON.stringify(input.candidate)}\n\nRoles:\n${JSON.stringify(input.roles)}`;
-    await runCodex(prompt, output, SCHEMA, "low", MATCH_MODEL);
+    await runCodex(prompt, output, SCHEMA, "low");
     const result = cleanMatchResult(JSON.parse(await readFile(output, "utf8")));
     await rm(temp, { recursive: true, force: true });
     send(response, 200, result);
