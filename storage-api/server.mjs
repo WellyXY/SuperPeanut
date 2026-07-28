@@ -31,7 +31,7 @@ async function sendAsset(response, file, contentType) {
   const body = await readFile(new URL(file, PUBLIC_ROOT));
   response.writeHead(200, {
     "content-type": contentType,
-    "cache-control": file.endsWith(".html") ? "no-store" : "public, max-age=300",
+    "cache-control": "no-store",
   });
   response.end(body);
 }
@@ -195,7 +195,7 @@ async function writeMessages(client, userId, messages) {
 }
 
 async function adminSnapshot() {
-  const [dashboardResult, hcsResult, usersResult, matchesResult] = await Promise.all([
+  const [dashboardResult, hcsResult, usersResult, matchesResult, trendsResult] = await Promise.all([
     pool.query(`WITH hc_base AS (
       SELECT user_id, hc_id,
         lower(regexp_replace(trim(title), '\\s+', ' ', 'g')) || '|' ||
@@ -209,6 +209,11 @@ async function adminSnapshot() {
         FROM match_history mh
         LEFT JOIN hc_base hb ON hb.user_id = mh.user_id AND hb.hc_id = mh.matched_hc_id
         WHERE mh.created_at >= NOW() - INTERVAL '24 hours' AND mh.matched_hc_id IS NOT NULL AND NOT mh.no_fit) AS "matchedHcs24h",
+      (SELECT COUNT(DISTINCT COALESCE(hb.canonical_key, mh.user_id::text || '|' || mh.matched_hc_id))::int
+        FROM match_history mh
+        LEFT JOIN hc_base hb ON hb.user_id = mh.user_id AND hb.hc_id = mh.matched_hc_id
+        WHERE (mh.created_at AT TIME ZONE 'America/Los_Angeles')::date >= (NOW() AT TIME ZONE 'America/Los_Angeles')::date - 6
+          AND mh.matched_hc_id IS NOT NULL AND NOT mh.no_fit) AS "matchedHcs7d",
       (SELECT COUNT(*)::int FROM users) AS "totalUsers",
       (SELECT COUNT(DISTINCT lower(regexp_replace(trim(title), '\\s+', ' ', 'g')) || '|' ||
         lower(regexp_replace(regexp_replace(trim(location), '[,，;；(（].*$', ''), '\\s+', ' ', 'g')))::int FROM hcs) AS "uniqueHcs",
@@ -287,10 +292,37 @@ async function adminSnapshot() {
     LEFT JOIN hc_base hb ON hb.user_id = mh.user_id AND hb.hc_id = mh.matched_hc_id
     ORDER BY mh.created_at DESC
     LIMIT 1000`),
+    pool.query(`WITH days AS (
+      SELECT generate_series(
+        (NOW() AT TIME ZONE 'America/Los_Angeles')::date - 6,
+        (NOW() AT TIME ZONE 'America/Los_Angeles')::date,
+        INTERVAL '1 day'
+      )::date AS day
+    ), hc_base AS (
+      SELECT user_id, hc_id,
+        lower(regexp_replace(trim(title), '\\s+', ' ', 'g')) || '|' ||
+        lower(regexp_replace(regexp_replace(trim(location), '[,，;；(（].*$', ''), '\\s+', ' ', 'g')) AS canonical_key
+      FROM hcs
+    )
+    SELECT to_char(days.day, 'YYYY-MM-DD') AS date,
+      (SELECT COUNT(*)::int FROM match_history mh
+        WHERE (mh.created_at AT TIME ZONE 'America/Los_Angeles')::date = days.day) AS matches,
+      (SELECT COUNT(*)::int FROM agent_comment_events ae
+        WHERE ae.role = 'user' AND (ae.created_at AT TIME ZONE 'America/Los_Angeles')::date = days.day) AS "agentMessages",
+      (SELECT COUNT(DISTINCT COALESCE(hb.canonical_key, mh.user_id::text || '|' || mh.matched_hc_id))::int
+        FROM match_history mh
+        LEFT JOIN hc_base hb ON hb.user_id = mh.user_id AND hb.hc_id = mh.matched_hc_id
+        WHERE (mh.created_at AT TIME ZONE 'America/Los_Angeles')::date = days.day
+          AND mh.matched_hc_id IS NOT NULL AND NOT mh.no_fit) AS "matchedHcs",
+      (SELECT COUNT(*)::int FROM users u
+        WHERE (u.created_at AT TIME ZONE 'America/Los_Angeles')::date <= days.day) AS "extensionUsers"
+    FROM days
+    ORDER BY days.day`),
   ]);
   return {
     generatedAt: new Date().toISOString(),
     dashboard: dashboardResult.rows[0],
+    trends: trendsResult.rows,
     hcs: hcsResult.rows,
     users: usersResult.rows,
     matches: matchesResult.rows,

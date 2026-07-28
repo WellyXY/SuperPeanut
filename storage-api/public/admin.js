@@ -32,14 +32,40 @@ function dedupeCandidates(rows) {
 function tableEmpty(message) { return `<div class="empty">${escapeHtml(message)}</div>`; }
 function metric(label, value, note) { return `<article class="metric"><span>${escapeHtml(label)}</span><strong>${number(value)}</strong><small>${escapeHtml(note)}</small></article>`; }
 
+function trendDate(value) {
+  const [, month, day] = String(value || "").split("-");
+  return month && day ? `${Number(month)}/${Number(day)}` : "";
+}
+
+function trendCard(label, key, note, cumulative = false, headlineValue = null) {
+  const rows = snapshot.trends || [];
+  const values = rows.map((row) => Number(row[key] || 0));
+  const headline = headlineValue == null
+    ? (cumulative ? values.at(-1) || 0 : values.reduce((sum, value) => sum + value, 0))
+    : Number(headlineValue);
+  const peak = Math.max(1, ...values);
+  const width = 420;
+  const height = 92;
+  const inset = 8;
+  const points = values.map((value, index) => {
+    const x = values.length > 1 ? index * (width / (values.length - 1)) : width / 2;
+    const y = height - inset - (value / peak) * (height - inset * 2);
+    return { x, y, value, date: rows[index]?.date || "" };
+  });
+  const line = points.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
+  const area = points.length ? `${line} L${width},${height} L0,${height} Z` : "";
+  const dots = points.map((point) => `<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="3"><title>${escapeHtml(trendDate(point.date))}: ${number(point.value)}</title></circle>`).join("");
+  return `<article class="trend-card"><div class="trend-head"><div><span>${escapeHtml(label)}</span><strong>${number(headline)}</strong></div><small>${escapeHtml(note)}</small></div><svg class="trend-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(`${label}近 7 天趨勢`)}"><path class="trend-area" d="${area}"></path><path class="trend-line" d="${line}"></path>${dots}</svg><div class="trend-dates"><span>${escapeHtml(trendDate(rows[0]?.date))}</span><span>近 7 天</span><span>${escapeHtml(trendDate(rows.at(-1)?.date))}</span></div></article>`;
+}
+
 function dashboardView() {
   const d = snapshot.dashboard;
   const recent = snapshot.matches.slice(0, 6);
-  return `<div class="metrics">
-    ${metric("24 小時 Match", d.matches24h, "所有 Extension users")}
-    ${metric("24 小時 Agent comments", d.agentComments24h, "只計算使用者提問")}
-    ${metric("24 小時有結果的 HC", d.matchedHcs24h, "去重後的岗位")}
-    ${metric("Extension users", d.totalUsers, `${number(d.uniqueHcs)} 个去重 HC`)}
+  return `<div class="trends">
+    ${trendCard("Match", "matches", "7 日總計")}
+    ${trendCard("Agent messages", "agentMessages", "使用者送出的訊息")}
+    ${trendCard("匹配 HC", "matchedHcs", "7 日去重總數", false, d.matchedHcs7d)}
+    ${trendCard("Extension users", "extensionUsers", "目前累計使用者", true)}
   </div>
   <section class="section"><div class="section-head"><h2>最近匹配</h2><span>累計 ${number(d.totalMatches)} 次</span></div>${matchesTable(recent)}</section>
   <section class="section"><div class="section-head"><h2>最常匹配 HC</h2><span>按候選人數排序</span></div>${hcsTable(snapshot.hcs.slice(0, 8))}</section>`;
