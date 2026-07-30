@@ -48,6 +48,7 @@
     agentMessages: [],
     agentDraft: "",
     isAgentReplying: false,
+    agentStreamingId: null,
     isUploadingCv: false,
     isParsingRole: false,
     petPosition: null,
@@ -1022,7 +1023,7 @@
       ? `<section class="profile-card agent-candidate-card"><div class="agent-context-label"><span>当前对话候选人</span><span>LinkedIn 实时上下文</span></div><div class="profile-meta">${candidate.avatar ? `<img class="profile-avatar" src="${escapeAttribute(candidate.avatar)}" alt="${escapeAttribute(candidate.name)} 的头像">` : `<div class="profile-initial">${escapeHtml(candidate.name.slice(0, 1).toUpperCase())}</div>`}<div><p class="profile-name">${escapeHtml(candidate.name)}</p><p class="profile-copy">${escapeHtml(short(candidate.headline || "未显示当前职位", 86))}</p>${candidate.location ? `<p class="agent-candidate-location">${escapeHtml(candidate.location)}</p>` : ""}</div></div><div class="agent-candidate-footer"><span>可讨论匹配结果、经历证据与 JD</span>${candidate.url ? `<a href="${escapeAttribute(candidate.url)}" target="_blank" rel="noopener noreferrer">查看主页 ↗</a>` : ""}</div></section>`
       : `<section class="profile-card agent-intro"><div class="profile-meta"><div class="profile-initial">AI</div><div><p class="profile-name">招聘 Agent</p><p class="profile-copy">打开 LinkedIn 候选人主页后即可开始对话</p></div></div></section>`;
     return `${candidateCard}
-      <div class="agent-thread">${messages.length ? messages.map((message) => `<div class="agent-message ${message.role === "user" ? "is-user" : "is-agent"}"><span>${message.role === "user" ? "你" : "Agent"}</span><p>${escapeHtml(message.content)}</p></div>`).join("") : `<div class="empty">例如问：「${escapeHtml(contextName)} 最适合哪个 HC？还缺什么证据？」</div>`}${state.isAgentReplying ? `<div class="agent-message is-agent"><span>Agent</span><p>正在閱讀候選人、歷史匹配與 JD…</p></div>` : ""}</div>
+      <div class="agent-thread">${messages.length ? messages.map((message) => `<div class="agent-message ${message.role === "user" ? "is-user" : "is-agent"} ${message.id === state.agentStreamingId ? "is-streaming" : ""}" data-message-id="${escapeAttribute(message.id || "")}"><span>${message.role === "user" ? "你" : "Peanut"}</span><p>${escapeHtml(message.content || (message.id === state.agentStreamingId ? "正在閱讀候選人、歷史匹配與 JD…" : ""))}</p></div>`).join("") : `<div class="empty">例如问：「${escapeHtml(contextName)} 最适合哪个 HC？还缺什么证据？」</div>`}</div>
       <form id="agent-chat-form" class="agent-compose"><textarea class="textarea" name="question" placeholder="Let's talk bout ${escapeAttribute(contextName)}" ${state.isAgentReplying || state.isUploadingCv ? "disabled" : ""}>${escapeHtml(state.agentDraft)}</textarea><div class="agent-compose-actions"><button class="button ghost cv-upload-button" type="button" data-action="trigger-cv-upload" ${state.isUploadingCv ? "disabled" : ""}>${state.isUploadingCv ? "正在读取 CV" : "上传 CV"}</button><button class="button primary" type="submit" ${state.isAgentReplying || state.isUploadingCv ? "disabled" : ""}>${state.isAgentReplying ? "分析中" : "送出"}</button></div><input type="file" id="cv-upload" accept=".pdf,.docx,.txt,.md" hidden></form>`;
   }
 
@@ -1051,6 +1052,59 @@
     app.className = "app";
     app.innerHTML = `<div class="sany-shell ${state.isOpen ? "is-open" : ""}" style="--pet-x:${pet.x}px;--pet-y:${pet.y}px;--panel-x:${panel.x}px;--panel-y:${panel.y}px"><button class="sany-trigger" data-action="toggle" aria-label="拖动或打开 SuperPeanut"><span class="trigger-pet-pair"><span class="trigger-peanut" aria-hidden="true">${PEANUT_IDLE_FRAMES.map((frame) => `<i style="--peanut-idle-frame:url('${escapeAttribute(frame)}')"></i>`).join("")}</span><span class="trigger-mochi" aria-hidden="true" style="--mochi-idle:url('${escapeAttribute(MOCHI_IDLE)}')"></span></span><span class="trigger-hint">拖动 · 点击打开</span></button><aside class="sany-panel" aria-label="SuperPeanut 面板"><header class="panel-top"><div class="panel-head"><div class="brand"><div class="brand-mark">P</div><div><h1>SuperPeanut</h1><p>LinkedIn 招聘匹配工作台</p></div></div><button class="icon-button" data-action="close" aria-label="收起面板">×</button></div><nav class="tabs" aria-label="功能导航"><button class="tab ${state.tab === "match" ? "is-active" : ""}" data-action="tab" data-tab="match">候选人匹配</button><button class="tab ${state.tab === "hcs" ? "is-active" : ""}" data-action="tab" data-tab="hcs">HC 库</button><button class="tab ${state.tab === "history" ? "is-active" : ""}" data-action="tab" data-tab="history">查询记录</button><button class="tab ${state.tab === "agent" ? "is-active" : ""}" data-action="tab" data-tab="agent">Peanut</button></nav></header><main class="panel-body">${body}</main></aside>${modalHtml()}</div>`;
     shadow.append(app);
+    if (state.tab === "agent") scrollAgentToLatest();
+  }
+
+  function scrollAgentToLatest() {
+    window.requestAnimationFrame(() => {
+      const panelBody = shadow.querySelector(".panel-body");
+      if (panelBody) panelBody.scrollTop = panelBody.scrollHeight;
+    });
+  }
+
+  function updateStreamingAgentMessage(messageId, content) {
+    const message = state.agentMessages.find((item) => item.id === messageId);
+    if (message) message.content = content;
+    const paragraph = [...shadow.querySelectorAll(".agent-message")]
+      .find((element) => element.dataset.messageId === messageId)
+      ?.querySelector("p");
+    if (paragraph) paragraph.textContent = content || "正在閱讀候選人、歷史匹配與 JD…";
+    scrollAgentToLatest();
+  }
+
+  async function readAgentStream(response, onDelta) {
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.includes("text/event-stream") || !response.body) {
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || `agent returned ${response.status}`);
+      onDelta(payload.answer || "");
+      return;
+    }
+    if (!response.ok) throw new Error(`agent returned ${response.status}`);
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let answer = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+      const blocks = buffer.split("\n\n");
+      buffer = blocks.pop() || "";
+      for (const block of blocks) {
+        const event = block.split("\n").find((line) => line.startsWith("event:"))?.slice(6).trim() || "message";
+        const data = block.split("\n").filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trim()).join("\n");
+        if (!data) continue;
+        const payload = JSON.parse(data);
+        if (event === "delta") {
+          answer += String(payload.text || "");
+          onDelta(answer);
+        } else if (event === "error") {
+          throw new Error(payload.error || "Peanut 串流中断");
+        }
+      }
+      if (done) break;
+    }
+    if (!answer) onDelta("目前沒有足夠資料回答這個問題。");
   }
 
   async function refreshData({ rescan = false } = {}) {
@@ -1139,10 +1193,13 @@
   async function askAgent(question) {
     const text = String(question || "").trim();
     if (!text || state.isAgentReplying) return;
-    state.agentMessages.push({ id: `msg_${crypto.randomUUID()}`, createdAt: new Date().toISOString(), role: "user", content: text });
+    const userMessage = { id: `msg_${crypto.randomUUID()}`, createdAt: new Date().toISOString(), role: "user", content: text };
+    const streamingMessage = { id: `msg_${crypto.randomUUID()}`, createdAt: new Date().toISOString(), role: "agent", content: "" };
+    state.agentMessages.push(userMessage, streamingMessage);
     state.agentDraft = "";
     state.isAgentReplying = true;
-    SanyStore.saveAgentMessages(state.agentMessages).catch(() => null);
+    state.agentStreamingId = streamingMessage.id;
+    SanyStore.saveAgentMessages(state.agentMessages.filter((message) => message.id !== streamingMessage.id)).catch(() => null);
     render();
     try {
       const history = state.history.slice(0, 8).map((record) => ({
@@ -1152,22 +1209,21 @@
       }));
       const response = await fetch(`${AGENT_ENDPOINT}/chat`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", accept: "text/event-stream" },
         body: JSON.stringify({
           question: text,
           candidate: state.candidate,
           roles: state.hcs,
           history,
-          messages: state.agentMessages,
+          messages: state.agentMessages.filter((message) => message.id !== streamingMessage.id),
         }),
       });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || `agent returned ${response.status}`);
-      state.agentMessages.push({ id: `msg_${crypto.randomUUID()}`, createdAt: new Date().toISOString(), role: "agent", content: payload.answer || "目前沒有足夠資料回答這個問題。" });
+      await readAgentStream(response, (answer) => updateStreamingAgentMessage(streamingMessage.id, answer));
     } catch (error) {
-      state.agentMessages.push({ id: `msg_${crypto.randomUUID()}`, createdAt: new Date().toISOString(), role: "agent", content: `暫時無法回答：${error.message || "本機 Agent 未啟動"}` });
+      updateStreamingAgentMessage(streamingMessage.id, `暫時無法回答：${error.message || "本機 Agent 未啟動"}`);
     } finally {
       state.isAgentReplying = false;
+      state.agentStreamingId = null;
       SanyStore.saveAgentMessages(state.agentMessages).catch(() => null);
       render();
     }

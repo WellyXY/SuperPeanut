@@ -522,6 +522,18 @@
 .section-title { font-size:14px; }.role-name,.hc-name { font-size:15px; }.role-sub,.hc-sub,.history-sub { font-size:12px; }
 .tag,.priority,.text-action,.candidate-link,.linkedin-link,.history-meta,.history-card summary { font-size:11px; }
 .card-summary,.report-summary,.agent-message p,.jd-note { font-size:13px; line-height:1.62; }
+.agent-message.is-streaming p::after {
+  content:"";
+  display:inline-block;
+  width:6px;
+  height:1em;
+  margin-left:3px;
+  border-radius:2px;
+  background:#65a96f;
+  vertical-align:-2px;
+  animation:agent-stream-cursor .75s steps(1,end) infinite;
+}
+@keyframes agent-stream-cursor { 50% { opacity:0; } }
 .candidate-facts span,.evidence-title,.snapshot-heading,.agent-context-label,.agent-candidate-footer { font-size:11px; }
 .candidate-facts b,.dimension,.pros-cons p,.report-section p,.assessment-grid b { font-size:12px; }
 .decision-block h3,.highlight-item b,.fit-item b { font-size:12px; }.decision-block p,.decision-block ul,.decision-block ol,.fit-item p { font-size:12px; line-height:1.68; }

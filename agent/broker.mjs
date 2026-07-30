@@ -22,6 +22,29 @@ function send(response, status, value) {
   response.end(JSON.stringify(value));
 }
 
+function startEventStream(response) {
+  response.writeHead(200, {
+    "content-type": "text/event-stream; charset=utf-8",
+    "cache-control": "no-cache, no-transform",
+    "connection": "keep-alive",
+    "x-accel-buffering": "no",
+    "access-control-allow-origin": "*",
+  });
+  response.flushHeaders?.();
+}
+
+function streamEvent(response, event, value) {
+  response.write(`event: ${event}\ndata: ${JSON.stringify(value)}\n\n`);
+}
+
+function answerChunks(answer) {
+  return String(answer || "").match(/[\s\S]{1,14}/g) || [];
+}
+
+function delay(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
 const META_OUTPUT = /(?:不需要提及|该事实应|没有必要在这里|只需保留|这样就可以|不要提及|这个事实足够|到此为止|最终使用|实际输出|需纠正为)/;
 
 function cleanAgentText(value, sentenceLimit = 2) {
@@ -137,19 +160,42 @@ createServer(async (request, response) => {
     }
     if (request.url === "/chat") {
       if (!String(input?.question || "").trim()) throw new Error("question is required");
+      const wantsStream = String(request.headers.accept || "").includes("text/event-stream");
+      if (wantsStream) startEventStream(response);
+      let heartbeat = null;
+      if (wantsStream) {
+        streamEvent(response, "start", { ok: true });
+        heartbeat = setInterval(() => response.write(": keepalive\n\n"), 8000);
+      }
       const temp = await mkdtemp(join(tmpdir(), "sany-chat-"));
-      const output = join(temp, "answer.txt");
-      const context = {
-        currentCandidate: input.candidate || null,
-        activeHcs: Array.isArray(input.roles) ? input.roles : [],
-        recentCandidates: Array.isArray(input.history) ? input.history.slice(0, 8) : [],
-        conversation: Array.isArray(input.messages) ? input.messages.slice(-6) : [],
-      };
-      const prompt = `You are SANY Talent Match's recruiter copilot. Answer the recruiter's question using only the supplied candidate, HC/JD, and recent matching records. Be concise, practical, and explicit about evidence versus unknown facts. You may recommend follow-up questions, compare roles, or explain prior matches. Do not make hiring decisions. Never use or infer protected attributes (including age) for recommendations. Reply in the recruiter's language (Chinese if the question is Chinese).\n\nContext:\n${JSON.stringify(context)}\n\nRecruiter question:\n${String(input.question).trim()}`;
-      await runCodex(prompt, output, null, "low");
-      const answer = (await readFile(output, "utf8")).trim();
-      await rm(temp, { recursive: true, force: true });
-      return send(response, 200, { answer: answer || "目前沒有足夠資料回答這個問題。" });
+      try {
+        const output = join(temp, "answer.txt");
+        const context = {
+          currentCandidate: input.candidate || null,
+          activeHcs: Array.isArray(input.roles) ? input.roles : [],
+          recentCandidates: Array.isArray(input.history) ? input.history.slice(0, 8) : [],
+          conversation: Array.isArray(input.messages) ? input.messages.slice(-6) : [],
+        };
+        const prompt = `You are SANY Talent Match's recruiter copilot. Answer the recruiter's question using only the supplied candidate, HC/JD, and recent matching records. Be concise, practical, and explicit about evidence versus unknown facts. You may recommend follow-up questions, compare roles, or explain prior matches. Do not make hiring decisions. Never use or infer protected attributes (including age) for recommendations. Reply in the recruiter's language (Chinese if the question is Chinese).\n\nContext:\n${JSON.stringify(context)}\n\nRecruiter question:\n${String(input.question).trim()}`;
+        await runCodex(prompt, output, null, "low");
+        const answer = (await readFile(output, "utf8")).trim() || "目前沒有足夠資料回答這個問題。";
+        if (!wantsStream) return send(response, 200, { answer });
+        for (const chunk of answerChunks(answer)) {
+          streamEvent(response, "delta", { text: chunk });
+          await delay(18);
+        }
+        streamEvent(response, "done", { ok: true });
+        response.end();
+        return;
+      } catch (error) {
+        if (!wantsStream) throw error;
+        streamEvent(response, "error", { error: error.message || "agent chat failed" });
+        response.end();
+        return;
+      } finally {
+        if (heartbeat) clearInterval(heartbeat);
+        await rm(temp, { recursive: true, force: true });
+      }
     }
     if (!input?.candidate?.name || !Array.isArray(input?.roles)) throw new Error("candidate and roles are required");
     const temp = await mkdtemp(join(tmpdir(), "sany-match-"));
