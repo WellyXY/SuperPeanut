@@ -579,6 +579,28 @@ createServer(async (request, response) => {
   if (request.method === "GET" && (pathname === "/admin" || pathname === "/admin/")) return sendAsset(response, "admin.html", "text/html; charset=utf-8");
   if (request.method === "GET" && pathname === "/admin.css") return sendAsset(response, "admin.css", "text/css; charset=utf-8");
   if (request.method === "GET" && pathname === "/admin.js") return sendAsset(response, "admin.js", "text/javascript; charset=utf-8");
+  if (request.method === "POST" && pathname === "/v1/auth/register") {
+    try {
+      const input = await readBody(request);
+      const username = String(input.username || "").trim().toLowerCase();
+      const displayName = String(input.displayName || "").trim();
+      const password = String(input.password || "");
+      if (!/^[a-z0-9._-]{2,32}$/.test(username)) throw new Error("账号需为 2–32 位英文、数字、点、横线或下划线");
+      if (!displayName || displayName.length > 50) throw new Error("请输入有效的显示名称");
+      if (password.length < 4 || password.length > 128) throw new Error("密码需要 4–128 位");
+      const result = await pool.query(`INSERT INTO users (workspace_key_hash, username, display_name, password_hash)
+        VALUES ($1, $2, $3, $4) RETURNING id, username, display_name`,
+      [workspaceHash(`account:${username}:${randomBytes(8).toString("hex")}`), username, displayName, passwordHash(password)]);
+      const user = result.rows[0];
+      const token = randomBytes(32).toString("base64url");
+      await pool.query(`INSERT INTO user_sessions (token_hash, user_id, expires_at)
+        VALUES ($1, $2, NOW() + INTERVAL '90 days')`, [sessionHash(token), user.id]);
+      return send(response, 201, { token, user: { id: String(user.id), username: user.username, displayName: user.display_name } });
+    } catch (error) {
+      const conflict = error?.code === "23505";
+      return send(response, conflict ? 409 : 400, { error: conflict ? "这个账号已经被使用" : (error?.message || "注册失败") });
+    }
+  }
   if (request.method === "POST" && pathname === "/v1/auth/login") {
     try {
       const input = await readBody(request);

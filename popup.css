@@ -31,3 +31,5 @@ button:active, .import-label:active { transform: translateY(1px) scale(.99); }
 .account span { color: #eaf4f3; font-size: 12px; font-weight: 750; }
 .account small { margin-top: 3px; color: #829899; font-size: 9px; }
 .account button { width: auto; min-height: 28px; padding: 0 9px; color: #aac0bd; background: rgba(255,255,255,.05); font-size: 10px; }
+.auth-switch { min-height: 30px; color: #8fc9c0; background: transparent; font-size: 10px; font-weight: 600; }
+.auth-switch:hover { color: #c8f3eb; background: rgba(255,255,255,.04); }

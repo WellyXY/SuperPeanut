@@ -71,6 +71,7 @@ Extension 当前通过配置的 Cloudflare Tunnel 域名访问 broker。自行�
 - `user_sessions`
 
 新版 Extension 通过账号登录读取独立数据空间。后台的 Account Management 可以新增账号、修改名称／账号、停用账号与重置密码。旧版匿名 workspace 暂时保留兼容，但新版 Extension 不再自动创建匿名用户。
+登录页同时提供自助注册入口；新账号注册成功后会立即登录到空白独立工作区。
 
 启动所需环境变量：
 

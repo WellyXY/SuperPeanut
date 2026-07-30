@@ -1,6 +1,7 @@
 const count = document.querySelector("#hc-count");
 const message = document.querySelector("#message");
 const loginView = document.querySelector("#login-view");
+const registerView = document.querySelector("#register-view");
 const workspaceView = document.querySelector("#workspace-view");
 const loginMessage = document.querySelector("#login-message");
 const AGENT_ENDPOINT = "https://sany-agent-temp.racoonn.me";
@@ -12,11 +13,18 @@ function setMessage(text, isError = false) {
 
 function showAccount(account) {
   loginView.hidden = Boolean(account);
+  registerView.hidden = true;
   workspaceView.hidden = !account;
   if (account) {
     document.querySelector("#account-name").textContent = account.displayName || account.username;
     document.querySelector("#account-id").textContent = `@${account.username} · User ${String(account.id).padStart(4, "0")}`;
   }
+}
+
+function showAuth(mode) {
+  workspaceView.hidden = true;
+  loginView.hidden = mode !== "login";
+  registerView.hidden = mode !== "register";
 }
 
 async function ensureCompanySkills(roles) {
@@ -126,7 +134,7 @@ document.querySelector("#import-file").addEventListener("change", async (event) 
 
 loginView.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const button = loginView.querySelector("button");
+  const button = loginView.querySelector('button[type="submit"]');
   button.disabled = true;
   loginMessage.textContent = "正在登录…";
   loginMessage.classList.remove("is-error");
@@ -140,9 +148,33 @@ loginView.addEventListener("submit", async (event) => {
   } finally { button.disabled = false; }
 });
 
+registerView.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const button = registerView.querySelector('button[type="submit"]');
+  const registerMessage = document.querySelector("#register-message");
+  button.disabled = true;
+  registerMessage.textContent = "正在建立账号…";
+  registerMessage.classList.remove("is-error");
+  try {
+    const account = await SanyStore.register(
+      document.querySelector("#register-name").value,
+      document.querySelector("#register-username").value,
+      document.querySelector("#register-password").value,
+    );
+    showAccount(account);
+    await updateCount();
+  } catch (error) {
+    registerMessage.textContent = error?.message || "注册失败";
+    registerMessage.classList.add("is-error");
+  } finally { button.disabled = false; }
+});
+
+document.querySelector("#show-register").addEventListener("click", () => showAuth("register"));
+document.querySelector("#show-login").addEventListener("click", () => showAuth("login"));
+
 document.querySelector("#logout-button").addEventListener("click", async () => {
   await SanyStore.logout();
-  showAccount(null);
+  showAuth("login");
   document.querySelector("#login-password").value = "";
   loginMessage.textContent = "";
 });
