@@ -1006,8 +1006,7 @@
     return `
       ${state.flash ? `<p class="notice ${state.flashTone === "error" ? "is-error" : ""}">${escapeHtml(state.flash)}</p>` : ""}
       ${missingCompanyCount ? `<p class="company-warning"><b>${missingCompanyCount} 个 HC 未填写公司</b><span>请编辑补充 Company；未填写公司的 HC 不会参与匹配。</span></p>` : ""}
-      <div class="filter-row"><input class="input" data-control="hc-search" value="${escapeAttribute(state.hcSearch)}" placeholder="搜索岗位、地点或关键词"><select class="select" data-control="hc-region" aria-label="按大区筛选"><option value="all">全部大区</option>${regions.map((region) => `<option value="${escapeAttribute(region)}" ${state.hcRegion === region ? "selected" : ""}>${escapeHtml(region)}</option>`).join("")}</select><select class="select" data-control="hc-sort" aria-label="岗位排序"><option value="date" ${state.hcSort === "date" ? "selected" : ""}>日期：新→旧</option><option value="priority" ${state.hcSort === "priority" ? "selected" : ""}>优先级：SSS→S</option></select></div>
-      <div class="company-filter"><span class="product-filter-label">公司</span><div class="company-filter-tabs"><button class="product-filter-tag ${state.hcCompany === "all" ? "is-active" : ""}" data-action="filter-company" data-company="all">全部</button>${companies.map((company) => `<button class="product-filter-tag ${state.hcCompany === company ? "is-active" : ""}" data-action="filter-company" data-company="${escapeAttribute(company)}">${escapeHtml(company)}</button>`).join("")}</div></div>
+      <div class="filter-row"><input class="input" data-control="hc-search" value="${escapeAttribute(state.hcSearch)}" placeholder="搜索岗位、地点或关键词"><select class="select" data-control="hc-company" aria-label="按公司筛选"><option value="all">所有公司</option>${companies.map((company) => `<option value="${escapeAttribute(company)}" ${state.hcCompany === company ? "selected" : ""}>${escapeHtml(company)}</option>`).join("")}</select><select class="select" data-control="hc-region" aria-label="按大区筛选"><option value="all">全部大区</option>${regions.map((region) => `<option value="${escapeAttribute(region)}" ${state.hcRegion === region ? "selected" : ""}>${escapeHtml(region)}</option>`).join("")}</select><select class="select" data-control="hc-sort" aria-label="岗位排序"><option value="date" ${state.hcSort === "date" ? "selected" : ""}>日期：新→旧</option><option value="priority" ${state.hcSort === "priority" ? "selected" : ""}>优先级：SSS→S</option></select></div>
       <div class="skill-status-list">${visibleSkillCompanies.map((company) => { const skill = skillsByCompany.get(SanyStore.normalizeCompany(company)); return `<div class="skill-status ${skill ? "is-ready" : "is-missing"}"><span>${escapeHtml(company)}</span><b>${skill ? escapeHtml(skill.name) : "尚未生成 Skill"}</b><i>${skill ? "已启用" : "不会参与匹配"}</i></div>`; }).join("")}</div>
       <div class="product-filter"><div class="product-filter-head"><span class="product-filter-label">产品线</span><button class="product-filter-toggle" data-action="toggle-product-lines">${state.hcProductLinesExpanded ? "收起" : "展开全部"}</button></div><div class="product-filter-tags ${state.hcProductLinesExpanded ? "is-expanded" : ""}"><button class="product-filter-tag ${state.hcProductLine === "all" ? "is-active" : ""}" data-action="filter-product-line" data-product-line="all">全部</button>${productLines.map((line) => `<button class="product-filter-tag ${state.hcProductLine === line ? "is-active" : ""}" data-action="filter-product-line" data-product-line="${escapeAttribute(line)}">${escapeHtml(line)}</button>`).join("")}</div></div>
       <div class="button-row" style="margin-top:0"><button class="button primary" data-action="add-hc">新增岗位</button><button class="button ghost" data-action="trigger-upload">导入 XLSX</button><input type="file" id="hc-upload" accept=".xlsx,.xls" hidden></div>
@@ -1450,7 +1449,6 @@
       }
       return;
     }
-    if (action === "filter-company") { state.hcCompany = control.dataset.company || "all"; render(); return; }
     if (action === "filter-product-line") { state.hcProductLine = control.dataset.productLine || "all"; render(); return; }
     if (action === "toggle-product-lines") { state.hcProductLinesExpanded = !state.hcProductLinesExpanded; render(); return; }
     if (action === "rescan") {
@@ -1526,6 +1524,7 @@
     const target = event.target;
     if (target?.id === "hc-upload") { await handleImport(target.files?.[0]); return; }
     if (target?.id === "cv-upload") { await importCvAsCandidate(target.files?.[0]); target.value = ""; return; }
+    if (target?.dataset?.control === "hc-company") { state.hcCompany = target.value; render(); }
     if (target?.dataset?.control === "hc-region") { state.hcRegion = target.value; render(); }
     if (target?.dataset?.control === "hc-sort") { state.hcSort = target.value; await chrome.storage.local.set({ [HC_SORT_KEY]: state.hcSort }); render(); }
   });
