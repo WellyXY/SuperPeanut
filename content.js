@@ -1312,9 +1312,11 @@
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || `agent returned ${response.status}`);
-      const hcs = await SanyStore.replaceImportedRows(payload.roles || []);
+      const beforeCount = state.hcs.length;
+      const importedCount = Array.isArray(payload.roles) ? payload.roles.length : 0;
+      const hcs = await SanyStore.mergeImportedRows(payload.roles || []);
       state.hcs = hcs;
-      state.flash = `Peanut 已整理并导入 ${hcs.length} 个岗位，原有岗位已替换。`;
+      state.flash = `Peanut 已处理 ${importedCount} 个岗位；新增 ${Math.max(0, hcs.length - beforeCount)} 个，HC 库现有 ${hcs.length} 个。原有岗位已保留。`;
     } catch (error) {
       state.flash = error?.message || "导入失败，请检查 XLSX 格式。";
     }

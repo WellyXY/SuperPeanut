@@ -35,8 +35,10 @@ document.querySelector("#import-file").addEventListener("change", async (event) 
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || `agent returned ${response.status}`);
-    const hcs = await SanyStore.replaceImportedRows(payload.roles || []);
-    message.textContent = `Peanut 已整理并导入 ${hcs.length} 个岗位，LinkedIn 面板会自动同步。`;
+    const previous = await SanyStore.getHcs();
+    const importedCount = Array.isArray(payload.roles) ? payload.roles.length : 0;
+    const hcs = await SanyStore.mergeImportedRows(payload.roles || []);
+    message.textContent = `Peanut 已处理 ${importedCount} 个岗位；新增 ${Math.max(0, hcs.length - previous.length)} 个，原有 HC 已保留。`;
     await updateCount();
   } catch (error) {
     message.textContent = error?.message || "导入失败，请检查文件格式。";
