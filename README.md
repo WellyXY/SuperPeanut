@@ -48,6 +48,7 @@ Company 是导入与匹配的必要条件。单条岗位缺少公司时不会保
 - `POST /resume`
 - `POST /role`
 - `POST /roles/import`
+- `POST /roles/import/jobs` + `GET /roles/import/jobs/:id`（异步 Excel 导入，避免长任务被 Tunnel 超时切断）
 - `POST /skills/generate`
 
 本机启动：

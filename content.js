@@ -1382,18 +1382,31 @@
     render();
     try {
       const workbook = await SanyXlsx.parseWorkbookData(await file.arrayBuffer());
-      const response = await fetch(`${AGENT_ENDPOINT}/roles/import`, {
+      const response = await fetch(`${AGENT_ENDPOINT}/roles/import/jobs`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ fileName: file.name, sheets: SanyXlsx.agentSheets(workbook) }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || `agent returned ${response.status}`);
-      const missingCompanies = (payload.roles || []).filter((role) => !String(role?.company || "").trim());
+      let importPayload = payload;
+      if (payload.jobId) {
+        const deadline = Date.now() + 5 * 60 * 1000;
+        while (Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 1200));
+          const poll = await fetch(`${AGENT_ENDPOINT}/roles/import/jobs/${payload.jobId}`);
+          const job = await poll.json().catch(() => ({}));
+          if (!poll.ok) throw new Error(job.error || `agent returned ${poll.status}`);
+          if (job.status === "failed") throw new Error(job.error || "导入失败");
+          if (job.status === "completed") { importPayload = job.result || {}; break; }
+        }
+        if (importPayload === payload) throw new Error("导入处理超过 5 分钟，请稍后重试");
+      }
+      const missingCompanies = (importPayload.roles || []).filter((role) => !String(role?.company || "").trim());
       if (missingCompanies.length) throw new Error(`无法导入：${missingCompanies.length} 个 HC 没有公司名称。请补充 Company 后重新导入。`);
       const beforeCount = state.hcs.length;
-      const importedCount = Array.isArray(payload.roles) ? payload.roles.length : 0;
-      const hcs = await SanyStore.mergeImportedRows(payload.roles || []);
+      const importedCount = Array.isArray(importPayload.roles) ? importPayload.roles.length : 0;
+      const hcs = await SanyStore.mergeImportedRows(importPayload.roles || []);
       state.hcs = hcs;
       const missingCompanyCount = hcs.filter((role) => !String(role?.company || "").trim()).length;
       let skillError = null;

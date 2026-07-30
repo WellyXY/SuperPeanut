@@ -14,12 +14,13 @@ const ROLES_IMPORT_SCHEMA = join(ROOT, "agent", "roles-import-schema.json");
 const COMPANY_SKILLS_SCHEMA = join(ROOT, "agent", "company-skills-schema.json");
 const SANY_SKILL = join(ROOT, "agent", "company-skills", "sany-heavy-industry-match", "SKILL.md");
 const AGENT_MODEL = "gpt-5.6-luna";
+const importJobs = new Map();
 
 function send(response, status, value) {
   response.writeHead(status, {
     "content-type": "application/json",
     "access-control-allow-origin": "*",
-    "access-control-allow-methods": "POST, OPTIONS",
+    "access-control-allow-methods": "GET, POST, OPTIONS",
     "access-control-allow-headers": "content-type",
     "access-control-max-age": "86400",
   });
@@ -213,7 +214,12 @@ async function extractCvText(file, temp) {
 createServer(async (request, response) => {
   if (request.method === "OPTIONS") return send(response, 204, {});
   if (request.method === "GET" && request.url === "/health") return send(response, 200, { ok: true, mode: "fast", agentModel: AGENT_MODEL });
-  if (request.method !== "POST" || !["/match", "/chat", "/resume", "/role", "/roles/import", "/skills/generate"].includes(request.url)) return send(response, 404, { error: "not found" });
+  const importJobMatch = request.method === "GET" && request.url.match(/^\/roles\/import\/jobs\/([a-f0-9]{24})$/);
+  if (importJobMatch) {
+    const job = importJobs.get(importJobMatch[1]);
+    return job ? send(response, 200, job) : send(response, 404, { error: "导入任务不存在或已过期" });
+  }
+  if (request.method !== "POST" || !["/match", "/chat", "/resume", "/role", "/roles/import", "/roles/import/jobs", "/skills/generate"].includes(request.url)) return send(response, 404, { error: "not found" });
   let body = "";
   for await (const chunk of request) {
     body += chunk;
@@ -221,6 +227,22 @@ createServer(async (request, response) => {
   }
   try {
     const input = JSON.parse(body);
+    if (request.url === "/roles/import/jobs") {
+      const jobId = createHash("sha256").update(`${Date.now()}:${Math.random()}:${body.length}`).digest("hex").slice(0, 24);
+      importJobs.set(jobId, { status: "processing", createdAt: new Date().toISOString() });
+      fetch(`http://127.0.0.1:${PORT}/roles/import`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body,
+      }).then(async (result) => {
+        const payload = await result.json().catch(() => ({}));
+        if (!result.ok) throw Object.assign(new Error(payload.error || `agent returned ${result.status}`), { code: payload.code });
+        importJobs.set(jobId, { status: "completed", result: payload, completedAt: new Date().toISOString() });
+      }).catch((error) => {
+        importJobs.set(jobId, { status: "failed", error: error.message || "导入失败", code: error.code || "IMPORT_FAILED", completedAt: new Date().toISOString() });
+      }).finally(() => setTimeout(() => importJobs.delete(jobId), 30 * 60 * 1000));
+      return send(response, 202, { jobId, status: "processing" });
+    }
     if (request.url === "/skills/generate") {
       const groups = (Array.isArray(input?.companies) ? input.companies : []).slice(0, 20).map((group) => {
         const company = normalizeCompany(group?.company);
