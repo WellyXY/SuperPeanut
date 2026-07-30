@@ -981,16 +981,12 @@
     const companies = [...new Set(state.hcs.map((role) => role.company || "未提供公司"))].sort((a, b) => a.localeCompare(b, "zh-CN"));
     const regions = [...new Set(state.hcs.map((role) => role.region).filter(Boolean))].sort();
     const productLines = [...new Set(state.hcs.map((role) => role.businessUnit || "未设置产品线"))].sort((a, b) => a.localeCompare(b, "zh-CN"));
-    const search = state.hcSearch.trim().toLowerCase();
     const missingCompanyCount = state.hcs.filter((role) => !String(role.company || "").trim()).length;
-    const skillsByCompany = new Map(state.companySkills.map((skill) => [SanyStore.normalizeCompany(skill.company), skill]));
-    const visibleSkillCompanies = companies.filter((company) => company !== "未提供公司");
     const roles = state.hcs.filter((role) => {
-      const matchesSearch = !search || `${role.title} ${role.company} ${role.location} ${role.businessUnit} ${role.function} ${role.note}`.toLowerCase().includes(search);
       const matchesCompany = state.hcCompany === "all" || (role.company || "未提供公司") === state.hcCompany;
       const matchesRegion = state.hcRegion === "all" || role.region === state.hcRegion;
       const matchesProductLine = state.hcProductLine === "all" || (role.businessUnit || "未设置产品线") === state.hcProductLine;
-      return matchesSearch && matchesCompany && matchesRegion && matchesProductLine;
+      return matchesCompany && matchesRegion && matchesProductLine;
     }).sort((a, b) => {
       const aTime = Date.parse(a.updatedAt || "") || 0;
       const bTime = Date.parse(b.updatedAt || "") || 0;
@@ -1006,8 +1002,7 @@
     return `
       ${state.flash ? `<p class="notice ${state.flashTone === "error" ? "is-error" : ""}">${escapeHtml(state.flash)}</p>` : ""}
       ${missingCompanyCount ? `<p class="company-warning"><b>${missingCompanyCount} 个 HC 未填写公司</b><span>请编辑补充 Company；未填写公司的 HC 不会参与匹配。</span></p>` : ""}
-      <div class="filter-row"><input class="input" data-control="hc-search" value="${escapeAttribute(state.hcSearch)}" placeholder="搜索岗位、地点或关键词"><select class="select" data-control="hc-company" aria-label="按公司筛选"><option value="all">所有公司</option>${companies.map((company) => `<option value="${escapeAttribute(company)}" ${state.hcCompany === company ? "selected" : ""}>${escapeHtml(company)}</option>`).join("")}</select><select class="select" data-control="hc-region" aria-label="按大区筛选"><option value="all">全部大区</option>${regions.map((region) => `<option value="${escapeAttribute(region)}" ${state.hcRegion === region ? "selected" : ""}>${escapeHtml(region)}</option>`).join("")}</select><select class="select" data-control="hc-sort" aria-label="岗位排序"><option value="date" ${state.hcSort === "date" ? "selected" : ""}>日期：新→旧</option><option value="priority" ${state.hcSort === "priority" ? "selected" : ""}>优先级：SSS→S</option></select></div>
-      <div class="skill-status-list">${visibleSkillCompanies.map((company) => { const skill = skillsByCompany.get(SanyStore.normalizeCompany(company)); return `<div class="skill-status ${skill ? "is-ready" : "is-missing"}"><span>${escapeHtml(company)}</span><b>${skill ? escapeHtml(skill.name) : "尚未生成 Skill"}</b><i>${skill ? "已启用" : "不会参与匹配"}</i></div>`; }).join("")}</div>
+      <div class="filter-row"><select class="select" data-control="hc-company" aria-label="按公司筛选"><option value="all">所有公司</option>${companies.map((company) => `<option value="${escapeAttribute(company)}" ${state.hcCompany === company ? "selected" : ""}>${escapeHtml(company)}</option>`).join("")}</select><select class="select" data-control="hc-region" aria-label="按大区筛选"><option value="all">全部大区</option>${regions.map((region) => `<option value="${escapeAttribute(region)}" ${state.hcRegion === region ? "selected" : ""}>${escapeHtml(region)}</option>`).join("")}</select><select class="select" data-control="hc-sort" aria-label="岗位排序"><option value="date" ${state.hcSort === "date" ? "selected" : ""}>日期：新→旧</option><option value="priority" ${state.hcSort === "priority" ? "selected" : ""}>优先级：SSS→S</option></select></div>
       <div class="product-filter"><div class="product-filter-head"><span class="product-filter-label">产品线</span><button class="product-filter-toggle" data-action="toggle-product-lines">${state.hcProductLinesExpanded ? "收起" : "展开全部"}</button></div><div class="product-filter-tags ${state.hcProductLinesExpanded ? "is-expanded" : ""}"><button class="product-filter-tag ${state.hcProductLine === "all" ? "is-active" : ""}" data-action="filter-product-line" data-product-line="all">全部</button>${productLines.map((line) => `<button class="product-filter-tag ${state.hcProductLine === line ? "is-active" : ""}" data-action="filter-product-line" data-product-line="${escapeAttribute(line)}">${escapeHtml(line)}</button>`).join("")}</div></div>
       <div class="button-row" style="margin-top:0"><button class="button primary" data-action="add-hc">新增岗位</button><button class="button ghost" data-action="trigger-upload">导入 XLSX</button><input type="file" id="hc-upload" accept=".xlsx,.xls" hidden></div>
       <div class="section-top"><h2 class="section-title">${roles.length} 个岗位</h2><span class="section-note">悬停查看历史候选人</span></div>
@@ -1531,7 +1526,6 @@
 
   shadow.addEventListener("input", (event) => {
     const target = event.target;
-    if (target?.dataset?.control === "hc-search") { state.hcSearch = target.value; render(); }
     if (target?.name === "question" && target.closest("#agent-chat-form")) state.agentDraft = target.value;
   });
 
