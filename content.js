@@ -1,6 +1,7 @@
 (async function () {
   // The public tunnel forwards requests to the signed-in local Codex broker.
   const AGENT_ENDPOINT = "https://sany-agent-temp.racoonn.me";
+  const EXTENSION_VERSION = chrome.runtime.getManifest().version;
   const HC_SORT_KEY = "superpeanut_hc_sort";
   const PET_POSITION_KEY = "superpeanut_pet_position";
   const PEANUT_SPRITESHEET = chrome.runtime.getURL("assets/peanut-spritesheet.webp");
@@ -28,6 +29,10 @@
   document.documentElement.append(root);
 
   const state = {
+    account: null,
+    authMode: "login",
+    authError: "",
+    isAuthenticating: false,
     hcs: [],
     history: [],
     candidate: null,
@@ -946,6 +951,11 @@
     </section>`;
   }
 
+  function renderAuth() {
+    if (state.authMode === "register") return `<section class="panel-auth"><div class="panel-auth-intro"><div class="panel-auth-mark">P</div><h2>建立 SuperPeanut 账号</h2><p>每个账号拥有独立的 HC、候选人、报告与 Peanut 对话。</p></div><form id="panel-register-form" class="panel-auth-form"><label>显示名称<input class="input" name="displayName" maxlength="50" autocomplete="name" required placeholder="例如 Alice"></label><label>登录账号<input class="input" name="username" minlength="2" maxlength="32" pattern="[A-Za-z0-9._-]+" autocomplete="username" required placeholder="alice"></label><label>密码<input class="input" name="password" type="password" minlength="4" maxlength="128" autocomplete="new-password" required></label>${state.authError ? `<p class="panel-auth-error">${escapeHtml(state.authError)}</p>` : ""}<button class="button primary" type="submit" ${state.isAuthenticating ? "disabled" : ""}>${state.isAuthenticating ? "正在建立…" : "建立并登录"}</button><button class="panel-auth-switch" type="button" data-action="auth-login">已有账号？返回登录</button></form></section>`;
+    return `<section class="panel-auth"><div class="panel-auth-intro"><div class="panel-auth-mark">P</div><h2>登录你的工作区</h2><p>登录后同步你的 HC、候选人和 Peanut 对话。</p></div><form id="panel-login-form" class="panel-auth-form"><label>账号<input class="input" name="username" autocomplete="username" required></label><label>密码<input class="input" name="password" type="password" autocomplete="current-password" required></label>${state.authError ? `<p class="panel-auth-error">${escapeHtml(state.authError)}</p>` : ""}<button class="button primary" type="submit" ${state.isAuthenticating ? "disabled" : ""}>${state.isAuthenticating ? "正在登录…" : "登录"}</button><button class="panel-auth-switch" type="button" data-action="auth-register">没有账号？建立新账号</button></form></section>`;
+  }
+
   function renderMatch() {
     const candidate = state.candidate || scanCandidate();
     const initial = candidate.canMatch ? candidate.name.slice(0, 1).toUpperCase() : "?";
@@ -1049,14 +1059,14 @@
   }
 
   function render() {
-    const body = state.tab === "match" ? renderMatch() : state.tab === "hcs" ? renderHcs() : state.tab === "history" ? renderHistory() : renderAgent();
+    const body = !state.account ? renderAuth() : state.tab === "match" ? renderMatch() : state.tab === "hcs" ? renderHcs() : state.tab === "history" ? renderHistory() : renderAgent();
     const pet = clampPetPosition(state.petPosition);
     const panel = panelPositionForPet(pet);
     state.petPosition = pet;
     shadow.querySelector(".app")?.remove();
     const app = document.createElement("div");
     app.className = "app";
-    app.innerHTML = `<div class="sany-shell ${state.isOpen ? "is-open" : ""}" style="--pet-x:${pet.x}px;--pet-y:${pet.y}px;--panel-x:${panel.x}px;--panel-y:${panel.y}px"><button class="sany-trigger" data-action="toggle" aria-label="拖动或打开 SuperPeanut"><span class="trigger-pet-pair"><span class="trigger-peanut" aria-hidden="true">${PEANUT_IDLE_FRAMES.map((frame) => `<i style="--peanut-idle-frame:url('${escapeAttribute(frame)}')"></i>`).join("")}</span><span class="trigger-mochi" aria-hidden="true" style="--mochi-idle:url('${escapeAttribute(MOCHI_IDLE)}')"></span></span><span class="trigger-hint">拖动 · 点击打开</span></button><aside class="sany-panel" aria-label="SuperPeanut 面板"><header class="panel-top"><div class="panel-head"><div class="brand"><div class="brand-mark">P</div><div><h1>SuperPeanut</h1><p>LinkedIn 招聘匹配工作台</p></div></div><button class="icon-button" data-action="close" aria-label="收起面板">×</button></div><nav class="tabs" aria-label="功能导航"><button class="tab ${state.tab === "match" ? "is-active" : ""}" data-action="tab" data-tab="match">候选人匹配</button><button class="tab ${state.tab === "hcs" ? "is-active" : ""}" data-action="tab" data-tab="hcs">HC 库</button><button class="tab ${state.tab === "history" ? "is-active" : ""}" data-action="tab" data-tab="history">查询记录</button><button class="tab ${state.tab === "agent" ? "is-active" : ""}" data-action="tab" data-tab="agent">Peanut</button></nav></header><main class="panel-body">${body}</main></aside>${modalHtml()}</div>`;
+    app.innerHTML = `<div class="sany-shell ${state.isOpen ? "is-open" : ""}" style="--pet-x:${pet.x}px;--pet-y:${pet.y}px;--panel-x:${panel.x}px;--panel-y:${panel.y}px"><button class="sany-trigger" data-action="toggle" aria-label="拖动或打开 SuperPeanut"><span class="trigger-pet-pair"><span class="trigger-peanut" aria-hidden="true">${PEANUT_IDLE_FRAMES.map((frame) => `<i style="--peanut-idle-frame:url('${escapeAttribute(frame)}')"></i>`).join("")}</span><span class="trigger-mochi" aria-hidden="true" style="--mochi-idle:url('${escapeAttribute(MOCHI_IDLE)}')"></span></span><span class="trigger-hint">拖动 · 点击打开</span></button><aside class="sany-panel" aria-label="SuperPeanut 面板"><header class="panel-top"><div class="panel-head"><div class="brand"><div class="brand-mark">P</div><div><h1>SuperPeanut</h1><p>${state.account ? `${escapeHtml(state.account.displayName || state.account.username)} · @${escapeHtml(state.account.username)}` : "LinkedIn 招聘匹配工作台"} · v${escapeHtml(EXTENSION_VERSION)}</p></div></div>${state.account ? `<button class="account-logout" data-action="logout-account">退出</button>` : ""}<button class="icon-button" data-action="close" aria-label="收起面板">×</button></div>${state.account ? `<nav class="tabs" aria-label="功能导航"><button class="tab ${state.tab === "match" ? "is-active" : ""}" data-action="tab" data-tab="match">候选人匹配</button><button class="tab ${state.tab === "hcs" ? "is-active" : ""}" data-action="tab" data-tab="hcs">HC 库</button><button class="tab ${state.tab === "history" ? "is-active" : ""}" data-action="tab" data-tab="history">查询记录</button><button class="tab ${state.tab === "agent" ? "is-active" : ""}" data-action="tab" data-tab="agent">Peanut</button></nav>` : ""}</header><main class="panel-body">${body}</main></aside>${state.account ? modalHtml() : ""}</div>`;
     shadow.append(app);
     if (state.tab === "agent") scrollAgentToLatest();
   }
@@ -1114,6 +1124,16 @@
   }
 
   async function refreshData({ rescan = false } = {}) {
+    state.account = await SanyStore.currentAccount();
+    if (!state.account) {
+      state.hcs = [];
+      state.history = [];
+      state.agentMessages = [];
+      state.companySkills = [];
+      if (rescan || !state.candidate) state.candidate = scanCandidate();
+      render();
+      return;
+    }
     try {
       [state.hcs, state.history, state.agentMessages, state.companySkills] = await Promise.all([SanyStore.getHcs(), SanyStore.getHistory(), SanyStore.getAgentMessages(), SanyStore.getCompanySkills()]);
     } catch (error) {
@@ -1439,6 +1459,20 @@
     if (action === "close-modal" && control.classList.contains("modal-backdrop") && event.target !== control) return;
     if (action === "toggle") { if (Date.now() < state.suppressPetClickUntil) return; state.isOpen = true; await refreshData({ rescan: true }); return; }
     if (action === "close") { state.isOpen = false; state.modal = null; render(); return; }
+    if (action === "auth-register") { state.authMode = "register"; state.authError = ""; render(); return; }
+    if (action === "auth-login") { state.authMode = "login"; state.authError = ""; render(); return; }
+    if (action === "logout-account") {
+      await SanyStore.logout();
+      state.account = null;
+      state.hcs = [];
+      state.history = [];
+      state.agentMessages = [];
+      state.companySkills = [];
+      state.authMode = "login";
+      state.authError = "";
+      render();
+      return;
+    }
     if (action === "tab") {
       state.tab = control.dataset.tab;
       state.modal = null;
@@ -1555,6 +1589,26 @@
 
   shadow.addEventListener("submit", async (event) => {
     const form = event.target;
+    if (form?.id === "panel-login-form" || form?.id === "panel-register-form") {
+      event.preventDefault();
+      const values = Object.fromEntries(new FormData(form).entries());
+      state.isAuthenticating = true;
+      state.authError = "";
+      render();
+      try {
+        state.account = form.id === "panel-login-form"
+          ? await SanyStore.login(values.username, values.password)
+          : await SanyStore.register(values.displayName, values.username, values.password);
+        state.authMode = "login";
+        await refreshData({ rescan: true });
+      } catch (error) {
+        state.authError = error?.message || (form.id === "panel-login-form" ? "登录失败" : "注册失败");
+      } finally {
+        state.isAuthenticating = false;
+        render();
+      }
+      return;
+    }
     if (form?.id === "agent-chat-form") {
       event.preventDefault();
       await askAgent(new FormData(form).get("question"));
@@ -1598,7 +1652,7 @@
     if (message?.type === "TOGGLE_OVERLAY") { state.isOpen = true; refreshData({ rescan: true }); }
   });
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && (changes[SanyStore.KEY.hcs] || changes[SanyStore.KEY.history])) refreshData();
+    if (area === "local" && (changes[SanyStore.KEY.session] || changes[SanyStore.KEY.account])) refreshData();
   });
 
   let candidateCheckQueued = false;

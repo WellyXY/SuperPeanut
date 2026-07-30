@@ -573,3 +573,19 @@
   71.4%,85.67% { background-position:-390px 0; }
   85.68%,100% { background-position:-468px 0; }
 }
+
+/* Account gate lives inside the LinkedIn panel, not only the toolbar popup. */
+.panel-auth { min-height:100%; padding:34px 22px 28px; display:flex; flex-direction:column; justify-content:center; }
+.panel-auth-intro { margin-bottom:24px; text-align:center; }
+.panel-auth-mark { width:48px; height:48px; margin:0 auto 14px; display:grid; place-items:center; border-radius:15px; color:#315326; background:#b9ff69; font-size:20px; font-weight:900; box-shadow:0 9px 24px rgba(126,175,67,.18); }
+.panel-auth-intro h2 { margin:0; color:#353531; font-size:21px; letter-spacing:-.035em; }
+.panel-auth-intro p { max-width:310px; margin:8px auto 0; color:#81817b; font-size:12px; line-height:1.55; }
+.panel-auth-form { display:grid; gap:13px; }
+.panel-auth-form label { display:grid; gap:6px; color:#74746e; font-size:11px; font-weight:700; }
+.panel-auth-form .input { height:44px; padding:0 12px; color:#343530; background:#fffdfa; }
+.panel-auth-form .button { min-height:43px; margin-top:2px; }
+.panel-auth-switch { min-height:32px; border:0; color:#568d55; background:transparent; cursor:pointer; font:inherit; font-size:11px; font-weight:700; }
+.panel-auth-switch:hover { color:#315d32; }
+.panel-auth-error { margin:0; padding:10px 11px; border:1px solid #f1c3bc; border-radius:9px; color:#a7483d; background:#fff1ee; font-size:11px; line-height:1.45; }
+.account-logout { min-height:28px; margin-left:auto; padding:0 9px; border:1px solid #ddd8ce; border-radius:8px; color:#787872; background:#fffdf9; cursor:pointer; font:inherit; font-size:10px; }
+.account-logout:hover { color:#3d653f; border-color:#b9d1b9; background:#f3f8f0; }
