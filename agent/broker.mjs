@@ -56,6 +56,7 @@ function normalizeCompany(value) {
 
 function skillName(company) {
   if (normalizeCompany(company) === "三一重工") return "sany-heavy-industry-match";
+  if (normalizeCompany(company) === "法本科技") return "faben-technology-match";
   const ascii = company.normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 42);
   const suffix = createHash("sha256").update(company).digest("hex").slice(0, 8);
   return `${ascii || "company"}-${suffix}-match`;
@@ -211,7 +212,7 @@ For each company:
 - name must be a concise lowercase hyphen-case skill name.
 - description is routing metadata. It must name the company and summarize the actual HC locations, functions, product lines, and representative roles so a router can decide whether to load it from candidate background.
 - content is the Markdown body after frontmatter.
-- The FIRST substantive section after the title must be "## 公司介绍". Explain what the company does, its explicitly evidenced business/product scope, markets, and the functions represented by these HCs. If a fact is not present in the supplied source, write "未提供" or omit that fact; do not use outside knowledge or guess.
+- The FIRST substantive section after the title must be "## 公司介绍". In natural recruiter-facing Chinese, explain what the company does, its explicitly evidenced business/product scope, markets, and the functions represented by these HCs. Do not call the source "供应记录", "提供的记录", or similar system language. If a fact is not present in the supplied source, write "未提供" or omit that fact; do not use outside knowledge or guess.
 - Include the same useful section pattern as the SANY blueprint: company introduction, routing outcome, explicit hard gates, soft assessment, role positioning, recommendation, required report, and evidence discipline.
 - Derive company-specific rules only from that company's supplied HCs and notes.
 - If no prohibited companies, language rule, education threshold, compensation rule, customer requirement, or other condition is explicitly stated, omit that rule. Never fill a section with invented policy.

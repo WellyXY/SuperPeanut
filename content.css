@@ -544,6 +544,10 @@
 .notice.is-error,.company-warning { border:1px solid #efb5ad; background:#fff0ed; color:#a83d32; }
 .company-warning { display:grid; gap:3px; margin:0 0 11px; padding:10px 11px; border-radius:10px; font-size:12px; line-height:1.45; }
 .company-warning b { font-size:12px; }.company-warning span { color:#8f4d45; }
+.skill-status-list { display:grid; gap:6px; margin:-3px 0 11px; }
+.skill-status { display:grid; grid-template-columns:minmax(70px,.7fr) minmax(120px,1.3fr) auto; align-items:center; gap:8px; padding:7px 9px; border:1px solid #ddd7cc; border-radius:9px; background:#f8f6f1; color:#45413b; font-size:11px; }
+.skill-status span { font-weight:750; }.skill-status b { overflow:hidden; color:#6d675f; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:10px; font-weight:600; text-overflow:ellipsis; white-space:nowrap; }.skill-status i { color:#7e786f; font-style:normal; }
+.skill-status.is-ready { border-color:#c7dfc1; background:#f1f8ee; }.skill-status.is-ready i { color:#3f7838; }.skill-status.is-missing { border-color:#efb5ad; background:#fff0ed; }.skill-status.is-missing i { color:#a83d32; }
 @media (max-width: 520px) { .sany-panel { width:100%; } }
 
 /* Draggable Peanut anchor with the panel pinned to its left. */
