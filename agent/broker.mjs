@@ -331,9 +331,8 @@ ${JSON.stringify(sheets)}`;
         await runCodex(prompt, output, ROLES_IMPORT_SCHEMA, "low");
         const result = JSON.parse(await readFile(output, "utf8"));
         const roles = Array.isArray(result.roles) ? result.roles : [];
-        const companyError = missingCompanyMessage(roles);
-        if (companyError) return send(response, 422, { error: companyError, code: "COMPANY_REQUIRED" });
-        return send(response, 200, { roles });
+        const missingCompanyCount = roles.filter((role) => !String(role?.company || "").trim()).length;
+        return send(response, 200, { roles, warnings: { missingCompanyCount } });
       } finally {
         await rm(temp, { recursive: true, force: true });
       }

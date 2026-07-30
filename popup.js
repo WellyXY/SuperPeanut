@@ -106,8 +106,6 @@ document.querySelector("#import-file").addEventListener("change", async (event) 
       }
       if (importPayload === payload) throw new Error("导入处理超过 5 分钟，请稍后重试");
     }
-    const missingCompanies = (importPayload.roles || []).filter((role) => !String(role?.company || "").trim());
-    if (missingCompanies.length) throw new Error(`无法导入：${missingCompanies.length} 个 HC 没有公司名称。请补充 Company 后重新导入。`);
     const previous = await SanyStore.getHcs();
     const importedCount = Array.isArray(importPayload.roles) ? importPayload.roles.length : 0;
     const hcs = await SanyStore.mergeImportedRows(importPayload.roles || []);
