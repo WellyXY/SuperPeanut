@@ -287,6 +287,9 @@
 .product-filter-toggle:hover { color:#315c3b; text-decoration:underline; }
 .product-filter-tags { display:flex; flex-wrap:wrap; align-content:flex-start; gap:6px; min-width:0; max-height:62px; overflow:hidden; padding:1px; }
 .product-filter-tags.is-expanded { max-height:none; }
+.company-filter { margin:10px 0; padding:10px; border:1px solid var(--line); border-radius:10px; background:rgba(255,255,255,.34); }
+.company-filter-tabs { display:flex; gap:6px; margin-top:8px; overflow-x:auto; padding-bottom:3px; scrollbar-width:thin; }
+.company-filter-tabs .product-filter-tag { flex:0 0 auto; }
 .product-filter-tag { flex:0 0 auto; min-height:27px; padding:4px 9px; border:1px solid #ded9cf; border-radius:999px; background:#fffdf9; color:#6f706b; cursor:pointer; font:inherit; font-size:11px; font-weight:650; white-space:nowrap; }
 .product-filter-tag:hover { border-color:#b9cda3; color:#42623c; }
 .product-filter-tag.is-active { border-color:#cfe2ad; background:#eaf8c9; color:#47652d; }
