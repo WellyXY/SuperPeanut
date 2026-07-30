@@ -12,12 +12,22 @@
         <div class="mark">S</div>
         <div><h1>SuperPeanut</h1><p>LinkedIn 招聘匹配工作台</p></div>
       </header>
-      <section class="status"><span id="hc-count">读取中</span><span>已加载岗位</span></section>
-      <button class="primary" id="open-panel">在 LinkedIn 打开工作台</button>
-      <label class="import-label" for="import-file">导入／更新 HC 清单（XLSX）</label>
-      <input id="import-file" type="file" accept=".xlsx,.xls" hidden>
-      <p id="message" class="message">首次安装不会预载岗位，请先导入或新增 HC。</p>
-      <p class="footnote">在 LinkedIn 候选人主页中点击悬浮双狗，即可生成单一最佳岗位报告。</p>
+      <form id="login-view" class="login-view" hidden>
+        <div><strong>登录你的工作区</strong><span>HC、候选人和 Peanut 对话会跟随账号同步</span></div>
+        <label>账号<input id="login-username" autocomplete="username" required></label>
+        <label>密码<input id="login-password" type="password" autocomplete="current-password" required></label>
+        <button class="primary" type="submit">登录</button>
+        <p id="login-message" class="message"></p>
+      </form>
+      <div id="workspace-view" hidden>
+        <section class="account"><div><span id="account-name"></span><small id="account-id"></small></div><button id="logout-button" type="button">退出</button></section>
+        <section class="status"><span id="hc-count">读取中</span><span>已加载岗位</span></section>
+        <button class="primary" id="open-panel">在 LinkedIn 打开工作台</button>
+        <label class="import-label" for="import-file">导入／更新 HC 清单（XLSX）</label>
+        <input id="import-file" type="file" accept=".xlsx,.xls" hidden>
+        <p id="message" class="message">首次安装不会预载岗位，请先导入或新增 HC。</p>
+        <p class="footnote">在 LinkedIn 候选人主页中点击悬浮双狗，即可生成单一最佳岗位报告。</p>
+      </div>
     </main>
     <script src="lib/storage.js"></script>
     <script src="lib/xlsx-parser.js"></script>

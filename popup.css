@@ -2,6 +2,7 @@
 * { box-sizing: border-box; }
 body { width: 330px; margin: 0; background: #122124; color: #eaf4f3; font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 .popup { padding: 18px; }
+[hidden] { display: none !important; }
 header { display: flex; gap: 10px; align-items: center; }
 .mark { width: 31px; height: 31px; display: grid; place-items: center; border-radius: 10px; background: #38b6a5; color: #06312c; font-size: 15px; font-weight: 800; }
 h1 { margin: 0; font-size: 15px; }
@@ -17,3 +18,16 @@ button:active, .import-label:active { transform: translateY(1px) scale(.99); }
 .message { min-height: 32px; margin: 11px 0 0; color: #9fc7c0; font-size: 11px; line-height: 1.45; }
 .message.is-error { color: #ffaaa0; }
 .footnote { margin: 12px 0 0; padding-top: 11px; border-top: 1px solid rgba(186, 218, 215, .12); color: #72898a; font-size: 10px; line-height: 1.5; }
+.login-view { display: grid; gap: 10px; margin-top: 18px; }
+.login-view > div { margin-bottom: 2px; }
+.login-view strong, .login-view span { display: block; }
+.login-view strong { font-size: 13px; }
+.login-view span { margin-top: 4px; color: #8fa4a5; font-size: 10px; line-height: 1.45; }
+.login-view label { display: grid; gap: 5px; color: #9fb6b4; font-size: 10px; }
+.login-view input { width: 100%; height: 39px; padding: 0 11px; border: 1px solid rgba(186,218,215,.17); border-radius: 9px; outline: 0; color: #eef8f6; background: #182b2e; font: inherit; }
+.login-view input:focus { border-color: #38b6a5; box-shadow: 0 0 0 3px rgba(56,182,165,.12); }
+.account { margin-top: 16px; padding: 10px 11px; border: 1px solid rgba(186,218,215,.14); border-radius: 11px; background: #182b2e; display: flex; align-items: center; justify-content: space-between; }
+.account span, .account small { display: block; }
+.account span { color: #eaf4f3; font-size: 12px; font-weight: 750; }
+.account small { margin-top: 3px; color: #829899; font-size: 9px; }
+.account button { width: auto; min-height: 28px; padding: 0 9px; color: #aac0bd; background: rgba(255,255,255,.05); font-size: 10px; }

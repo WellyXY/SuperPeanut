@@ -1,10 +1,22 @@
 const count = document.querySelector("#hc-count");
 const message = document.querySelector("#message");
+const loginView = document.querySelector("#login-view");
+const workspaceView = document.querySelector("#workspace-view");
+const loginMessage = document.querySelector("#login-message");
 const AGENT_ENDPOINT = "https://sany-agent-temp.racoonn.me";
 
 function setMessage(text, isError = false) {
   message.textContent = text;
   message.classList.toggle("is-error", isError);
+}
+
+function showAccount(account) {
+  loginView.hidden = Boolean(account);
+  workspaceView.hidden = !account;
+  if (account) {
+    document.querySelector("#account-name").textContent = account.displayName || account.username;
+    document.querySelector("#account-id").textContent = `@${account.username} · User ${String(account.id).padStart(4, "0")}`;
+  }
 }
 
 async function ensureCompanySkills(roles) {
@@ -112,4 +124,30 @@ document.querySelector("#import-file").addEventListener("change", async (event) 
   }
 });
 
-updateCount();
+loginView.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const button = loginView.querySelector("button");
+  button.disabled = true;
+  loginMessage.textContent = "正在登录…";
+  loginMessage.classList.remove("is-error");
+  try {
+    const account = await SanyStore.login(document.querySelector("#login-username").value, document.querySelector("#login-password").value);
+    showAccount(account);
+    await updateCount();
+  } catch (error) {
+    loginMessage.textContent = error?.message || "登录失败";
+    loginMessage.classList.add("is-error");
+  } finally { button.disabled = false; }
+});
+
+document.querySelector("#logout-button").addEventListener("click", async () => {
+  await SanyStore.logout();
+  showAccount(null);
+  document.querySelector("#login-password").value = "";
+  loginMessage.textContent = "";
+});
+
+SanyStore.currentAccount().then((account) => {
+  showAccount(account);
+  if (account) updateCount();
+});

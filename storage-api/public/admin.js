@@ -86,6 +86,14 @@ function usersView() {
   return `<div class="metrics">${metric("總 Users", snapshot.dashboard.totalUsers, "每個 Railway workspace 為一位 user")}${metric("24 小時活躍", rows.filter((user) => Date.now() - new Date(user.lastSeenAt).valueOf() < 86400000).length, "曾同步 Extension 資料")}${metric("有 Match 紀錄", rows.filter((user) => Number(user.matchCount) > 0).length, "至少匹配一位候選人")}${metric("有 Agent 對話", rows.filter((user) => Number(user.agentCommentCount) > 0).length, "至少提出一次問題")}</div><section class="section"><div class="section-head"><h2>User List</h2><span>${number(rows.length)} 位</span></div><div class="table-wrap"><table><thead><tr><th>User</th><th>最後使用</th><th>HC</th><th>Match 次數</th><th>候選人</th><th>Agent comments</th></tr></thead><tbody>${rows.map((user) => `<tr data-route="matches?user=${user.id}"><td><div class="primary">${escapeHtml(user.label)}</div><div class="secondary">建立於 ${date(user.createdAt)}</div></td><td>${date(user.lastSeenAt)}</td><td class="numeric">${number(user.hcCount)}</td><td class="numeric">${number(user.matchCount)}</td><td class="numeric">${number(user.candidateCount)}</td><td class="numeric">${number(user.agentCommentCount)}</td></tr>`).join("")}</tbody></table></div></section>`;
 }
 
+function accountsView() {
+  const rows = snapshot.users.filter((user) => user.managedAccount && includesSearch(user.label, user.username, user.id));
+  const legacyCount = snapshot.users.filter((user) => !user.managedAccount).length;
+  return `<div class="metrics">${metric("已建立账号", rows.length, "可直接登录 Extension")}${metric("启用账号", rows.filter((user) => !user.disabled).length, "目前允许登录")}${metric("Legacy workspace", legacyCount, "旧版设备资料，暂时保留")}${metric("在线账号", rows.filter((user) => Date.now() - new Date(user.lastSeenAt).valueOf() < 86400000).length, "过去 24 小时使用")}</div>
+  <section class="section"><div class="section-head"><h2>新增账号</h2><span>初始密码可由管理员设置</span></div><form class="account-create" data-account-create><label>显示名称<input name="displayName" required placeholder="例如 Alice"></label><label>登录账号<input name="username" required placeholder="alice"></label><label>初始密码<input name="password" type="password" minlength="4" value="1111" required></label><button type="submit">建立账号</button></form></section>
+  <section class="section"><div class="section-head"><h2>账号管理</h2><span>${number(rows.length)} 个账号</span></div><div class="account-list">${rows.map((user) => `<form class="account-row" data-account-id="${escapeHtml(user.id)}"><div class="account-identity"><strong>${escapeHtml(user.label)}</strong><span>User ${String(user.id).padStart(4, "0")} · ${number(user.hcCount)} HC · ${number(user.matchCount)} Match</span></div><label>显示名称<input name="displayName" value="${escapeHtml(user.displayName || user.label)}" required></label><label>登录账号<input name="username" value="${escapeHtml(user.username || "")}" required></label><label class="account-toggle"><input name="disabled" type="checkbox" ${user.disabled ? "checked" : ""}>停用</label><div class="account-actions"><button type="submit">保存</button><button type="button" data-reset-password>重置密码</button></div></form>`).join("")}</div></section>`;
+}
+
 function matchesTable(rows) {
   if (!rows.length) return tableEmpty("沒有符合條件的候選人");
   return `<div class="table-wrap"><table><thead><tr><th>候選人</th><th>User</th><th>適合 HC</th><th>分數</th><th>時間</th></tr></thead><tbody>${rows.map((item) => `<tr data-route="match/${encodeURIComponent(item.id)}"><td><div class="primary">${escapeHtml(item.name || "未命名候選人")}</div><div class="secondary">${escapeHtml(item.headline || item.location || "未提供介紹")}</div></td><td>${escapeHtml(item.userLabel)}</td><td>${item.noFit ? '<span class="tag danger">沒有匹配</span>' : escapeHtml(item.matchedHcTitle || "未記錄")}</td><td class="numeric">${item.score == null ? "未評分" : number(item.score)}</td><td class="numeric">${date(item.createdAt)}</td></tr>`).join("")}</tbody></table></div>`;
@@ -123,6 +131,7 @@ function render() {
   if (route === "dashboard") { pageTitle.textContent = "Dashboard"; app.innerHTML = dashboardView(); }
   else if (route === "hcs") { pageTitle.textContent = "HC List"; app.innerHTML = hcsView(); }
   else if (route === "users") { pageTitle.textContent = "Users"; app.innerHTML = usersView(); }
+  else if (route === "accounts") { pageTitle.textContent = "Account Management"; app.innerHTML = accountsView(); }
   else if (route.startsWith("hc/")) { pageTitle.textContent = "HC Detail"; app.innerHTML = hcDetail(decodeURIComponent(route.slice(3))); }
   else if (route.startsWith("match/")) { pageTitle.textContent = "Candidate Detail"; app.innerHTML = matchDetail(decodeURIComponent(route.slice(6))); }
   else { pageTitle.textContent = "Matched Candidates"; app.innerHTML = matchesView(route); }
@@ -143,10 +152,36 @@ async function load() {
 }
 
 document.addEventListener("click", (event) => {
+  const reset = event.target.closest("[data-reset-password]");
+  if (reset) {
+    const form = reset.closest("[data-account-id]");
+    const password = prompt("输入新密码（至少 4 位）", "1111");
+    if (password === null) return;
+    manageUser({ action: "reset-password", userId: form.dataset.accountId, password });
+    return;
+  }
   const target = event.target.closest("[data-route]");
   if (!target) return;
   location.hash = target.dataset.route;
 });
+document.addEventListener("submit", (event) => {
+  const create = event.target.closest("[data-account-create]");
+  const account = event.target.closest("[data-account-id]");
+  if (!create && !account) return;
+  event.preventDefault();
+  const data = new FormData(event.target);
+  if (create) manageUser({ action: "create", displayName: data.get("displayName"), username: data.get("username"), password: data.get("password") });
+  else manageUser({ action: "update", userId: account.dataset.accountId, displayName: data.get("displayName"), username: data.get("username"), disabled: data.get("disabled") === "on" });
+});
+
+async function manageUser(payload) {
+  try {
+    const response = await fetch("/api/admin/users", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+    await load();
+  } catch (error) { alert(error.message || "账号操作失败"); }
+}
 window.addEventListener("hashchange", render);
 searchInput.addEventListener("input", () => { search = searchInput.value.trim().toLowerCase(); render(); });
 refreshButton.addEventListener("click", load);

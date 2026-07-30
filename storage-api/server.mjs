@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { Pool } from "pg";
@@ -11,6 +11,22 @@ const pool = new Pool({
 const EMPTY = { hcs: [], history: [], messages: [], skills: [] };
 const PUBLIC_ROOT = new URL("./public/", import.meta.url);
 
+function passwordHash(password, salt = randomBytes(16).toString("hex")) {
+  return `scrypt$${salt}$${scryptSync(String(password), salt, 32).toString("hex")}`;
+}
+
+function passwordMatches(password, encoded) {
+  const [, salt, digest] = String(encoded || "").split("$");
+  if (!salt || !digest) return false;
+  const actual = scryptSync(String(password), salt, 32);
+  const expected = Buffer.from(digest, "hex");
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
+
+function sessionHash(token) {
+  return createHash("sha256").update(String(token || "")).digest("hex");
+}
+
 function workspaceHash(key) {
   return createHash("sha256").update(key).digest("hex");
 }
@@ -20,7 +36,7 @@ function send(response, status, value) {
     "content-type": "application/json",
     "access-control-allow-origin": "*",
     "access-control-allow-methods": "POST, OPTIONS, GET",
-    "access-control-allow-headers": "content-type, x-superpeanut-workspace",
+    "access-control-allow-headers": "content-type, x-superpeanut-workspace, x-superpeanut-session",
     "access-control-max-age": "86400",
     "cache-control": "no-store",
   });
@@ -73,6 +89,18 @@ async function resolveUser(client, key) {
     ON CONFLICT (workspace_key_hash) DO UPDATE SET last_seen_at = NOW()
     RETURNING id`, [workspaceHash(key)]);
   return result.rows[0].id;
+}
+
+async function authenticatedUser(client, request) {
+  const token = String(request.headers["x-superpeanut-session"] || "");
+  if (!/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
+  const result = await client.query(`SELECT u.id, u.username, u.display_name
+    FROM user_sessions s JOIN users u ON u.id = s.user_id
+    WHERE s.token_hash = $1 AND s.expires_at > NOW() AND NOT u.disabled`, [sessionHash(token)]);
+  if (!result.rowCount) return null;
+  await client.query("UPDATE user_sessions SET last_seen_at = NOW() WHERE token_hash = $1", [sessionHash(token)]);
+  await client.query("UPDATE users SET last_seen_at = NOW() WHERE id = $1", [result.rows[0].id]);
+  return result.rows[0];
 }
 
 async function writeHcs(client, userId, hcs) {
@@ -290,7 +318,11 @@ async function adminSnapshot() {
       FROM agent_comment_events WHERE role = 'user' GROUP BY user_id
     )
     SELECT u.id,
-      'User ' || lpad(u.id::text, 4, '0') AS label,
+      COALESCE(u.display_name, 'User ' || lpad(u.id::text, 4, '0')) AS label,
+      u.username,
+      u.display_name AS "displayName",
+      u.disabled,
+      (u.username IS NOT NULL) AS "managedAccount",
       u.created_at AS "createdAt",
       u.last_seen_at AS "lastSeenAt",
       COALESCE(h.hc_count, 0) AS "hcCount",
@@ -311,7 +343,7 @@ async function adminSnapshot() {
     )
     SELECT mh.record_id AS id,
       mh.user_id AS "userId",
-      'User ' || lpad(mh.user_id::text, 4, '0') AS "userLabel",
+      COALESCE(u.display_name, 'User ' || lpad(mh.user_id::text, 4, '0')) AS "userLabel",
       mh.candidate_name AS name,
       mh.candidate_url AS "linkedinUrl",
       mh.candidate_location AS location,
@@ -325,6 +357,7 @@ async function adminSnapshot() {
       COALESCE(hb.title, mh.reports->0#>>'{role,title}', '') AS "matchedHcTitle",
       COALESCE(hb.canonical_key, '') AS "hcKey"
     FROM match_history mh
+    JOIN users u ON u.id = mh.user_id
     LEFT JOIN hc_base hb ON hb.user_id = mh.user_id AND hb.hc_id = mh.matched_hc_id
     ORDER BY mh.created_at DESC
     LIMIT 1000`),
@@ -386,8 +419,23 @@ async function migrate() {
     await client.query(`CREATE TABLE IF NOT EXISTS users (
       id BIGSERIAL PRIMARY KEY,
       workspace_key_hash CHAR(64) UNIQUE NOT NULL,
+      username TEXT UNIQUE,
+      display_name TEXT,
+      password_hash TEXT,
+      disabled BOOLEAN NOT NULL DEFAULT FALSE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+    await client.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT UNIQUE");
+    await client.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name TEXT");
+    await client.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT");
+    await client.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS disabled BOOLEAN NOT NULL DEFAULT FALSE");
+    await client.query(`CREATE TABLE IF NOT EXISTS user_sessions (
+      token_hash CHAR(64) PRIMARY KEY,
+      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      expires_at TIMESTAMPTZ NOT NULL
     )`);
     await client.query(`CREATE TABLE IF NOT EXISTS hcs (
       user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -482,6 +530,25 @@ async function migrate() {
     await client.query("CREATE INDEX IF NOT EXISTS history_candidate_url_idx ON match_history (user_id, candidate_url)");
     await client.query("CREATE INDEX IF NOT EXISTS agent_events_created_idx ON agent_comment_events (created_at DESC)");
     await client.query("CREATE INDEX IF NOT EXISTS company_skills_user_idx ON company_skills (user_id, company)");
+    await client.query("CREATE INDEX IF NOT EXISTS user_sessions_user_idx ON user_sessions (user_id)");
+
+    const defaultAccounts = [
+      { id: 46, username: "welly", displayName: "Welly" },
+      { id: 26, username: "phoebe", displayName: "Phoebe" },
+      { id: 384, username: "zixin", displayName: "Zixin" },
+    ];
+    for (const account of defaultAccounts) {
+      const existing = await client.query("SELECT password_hash FROM users WHERE id = $1", [account.id]);
+      if (existing.rowCount) {
+        await client.query(`UPDATE users SET username = $2, display_name = $3,
+          password_hash = COALESCE(password_hash, $4), disabled = FALSE WHERE id = $1`,
+        [account.id, account.username, account.displayName, passwordHash("1111")]);
+      } else {
+        await client.query(`INSERT INTO users (id, workspace_key_hash, username, display_name, password_hash)
+          VALUES ($1, $2, $3, $4, $5)`, [account.id, workspaceHash(`account:${account.username}`), account.username, account.displayName, passwordHash("1111")]);
+      }
+    }
+    await client.query("SELECT setval(pg_get_serial_sequence('users', 'id'), GREATEST((SELECT MAX(id) FROM users), 1))");
 
     const legacyExists = await client.query("SELECT to_regclass('public.superpeanut_workspaces') AS table_name");
     if (legacyExists.rows[0]?.table_name) {
@@ -512,11 +579,71 @@ createServer(async (request, response) => {
   if (request.method === "GET" && (pathname === "/admin" || pathname === "/admin/")) return sendAsset(response, "admin.html", "text/html; charset=utf-8");
   if (request.method === "GET" && pathname === "/admin.css") return sendAsset(response, "admin.css", "text/css; charset=utf-8");
   if (request.method === "GET" && pathname === "/admin.js") return sendAsset(response, "admin.js", "text/javascript; charset=utf-8");
+  if (request.method === "POST" && pathname === "/v1/auth/login") {
+    try {
+      const input = await readBody(request);
+      const username = String(input.username || "").trim().toLowerCase();
+      const password = String(input.password || "");
+      const result = await pool.query("SELECT id, username, display_name, password_hash, disabled FROM users WHERE lower(username) = $1", [username]);
+      const user = result.rows[0];
+      if (!user || user.disabled || !passwordMatches(password, user.password_hash)) return send(response, 401, { error: "账号或密码错误" });
+      const token = randomBytes(32).toString("base64url");
+      await pool.query(`INSERT INTO user_sessions (token_hash, user_id, expires_at)
+        VALUES ($1, $2, NOW() + INTERVAL '90 days')`, [sessionHash(token), user.id]);
+      await pool.query("UPDATE users SET last_seen_at = NOW() WHERE id = $1", [user.id]);
+      return send(response, 200, { token, user: { id: String(user.id), username: user.username, displayName: user.display_name } });
+    } catch (error) {
+      return send(response, 400, { error: error?.message || "登录失败" });
+    }
+  }
+  if (request.method === "POST" && pathname === "/v1/auth/logout") {
+    const token = String(request.headers["x-superpeanut-session"] || "");
+    if (token) await pool.query("DELETE FROM user_sessions WHERE token_hash = $1", [sessionHash(token)]);
+    return send(response, 200, { ok: true });
+  }
+  if (request.method === "GET" && pathname === "/v1/auth/me") {
+    const user = await authenticatedUser(pool, request);
+    return user
+      ? send(response, 200, { user: { id: String(user.id), username: user.username, displayName: user.display_name } })
+      : send(response, 401, { error: "请先登录 SuperPeanut" });
+  }
   if (request.method === "GET" && pathname === "/api/admin/snapshot") {
     try {
       return send(response, 200, await adminSnapshot());
     } catch (error) {
       return send(response, 500, { error: error?.message || "admin query failed" });
+    }
+  }
+  if (request.method === "POST" && pathname === "/api/admin/users") {
+    try {
+      const input = await readBody(request);
+      const action = String(input.action || "");
+      if (action === "create") {
+        const username = String(input.username || "").trim().toLowerCase();
+        const displayName = String(input.displayName || "").trim();
+        const password = String(input.password || "1111");
+        if (!/^[a-z0-9._-]{2,32}$/.test(username) || !displayName) throw new Error("请输入有效的账号与显示名称");
+        const result = await pool.query(`INSERT INTO users (workspace_key_hash, username, display_name, password_hash)
+          VALUES ($1, $2, $3, $4) RETURNING id`, [workspaceHash(`account:${username}:${randomBytes(8).toString("hex")}`), username, displayName, passwordHash(password)]);
+        return send(response, 201, { ok: true, id: String(result.rows[0].id) });
+      }
+      const userId = Number(input.userId);
+      if (!Number.isSafeInteger(userId) || userId < 1) throw new Error("无效用户");
+      if (action === "update") {
+        const username = String(input.username || "").trim().toLowerCase();
+        const displayName = String(input.displayName || "").trim();
+        if (!/^[a-z0-9._-]{2,32}$/.test(username) || !displayName) throw new Error("请输入有效的账号与显示名称");
+        await pool.query("UPDATE users SET username = $2, display_name = $3, disabled = $4 WHERE id = $1", [userId, username, displayName, Boolean(input.disabled)]);
+      } else if (action === "reset-password") {
+        const password = String(input.password || "");
+        if (password.length < 4) throw new Error("密码至少需要 4 位");
+        await pool.query("UPDATE users SET password_hash = $2 WHERE id = $1", [userId, passwordHash(password)]);
+        await pool.query("DELETE FROM user_sessions WHERE user_id = $1", [userId]);
+      } else throw new Error("不支持的用户操作");
+      return send(response, 200, { ok: true });
+    } catch (error) {
+      const conflict = error?.code === "23505";
+      return send(response, conflict ? 409 : 400, { error: conflict ? "账号名称已经存在" : (error?.message || "用户操作失败") });
     }
   }
   if (request.method === "GET" && pathname === "/health") {
@@ -525,7 +652,7 @@ createServer(async (request, response) => {
       (SELECT COUNT(*)::int FROM hcs) AS hcs,
       (SELECT COUNT(*)::int FROM match_history) AS match_history,
       (SELECT COUNT(*)::int FROM company_skills) AS company_skills`);
-    return send(response, 200, { ok: true, schemaVersion: 4, tables: result.rows[0] });
+    return send(response, 200, { ok: true, schemaVersion: 5, tables: result.rows[0] });
   }
   if (request.method !== "POST" || !["/v1/state/read", "/v1/state/write"].includes(pathname)) {
     return send(response, 404, { error: "not found" });
@@ -533,9 +660,14 @@ createServer(async (request, response) => {
 
   const client = await pool.connect();
   try {
-    const key = workspaceKey(request);
     await client.query("BEGIN");
-    const userId = await resolveUser(client, key);
+    const account = await authenticatedUser(client, request);
+    let userId = account?.id;
+    if (!userId && request.headers["x-superpeanut-workspace"]) userId = await resolveUser(client, workspaceKey(request));
+    if (!userId) {
+      await client.query("ROLLBACK");
+      return send(response, 401, { error: "请先登录 SuperPeanut" });
+    }
 
     if (pathname === "/v1/state/read") {
       const state = await readState(client, userId);
