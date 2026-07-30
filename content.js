@@ -792,7 +792,7 @@
     const educationSummary = profile.education?.[0] ? `${profile.education[0].degree}，${profile.education[0].school}` : "未显示教育背景";
     return {
       roleId: role.id,
-      role: { title: role.title, location: role.location, priority: role.priority, function: role.function, businessUnit: role.businessUnit, note: role.note },
+      role: { title: role.title, company: role.company, location: role.location, priority: role.priority, function: role.function, businessUnit: role.businessUnit, note: role.note },
       score,
       level,
       summary: `${candidate.name} 与 ${role.title} 的匹配分为 ${score} 分。${background} ${location.text}。`,
@@ -840,7 +840,7 @@
       : "未显示教育背景";
     return {
       roleId: role.id,
-      role: { title: role.title, location: role.location, priority: role.priority, function: role.function, businessUnit: role.businessUnit, note: role.note },
+      role: { title: role.title, company: role.company, location: role.location, priority: role.priority, function: role.function, businessUnit: role.businessUnit, note: role.note },
       score: Math.max(0, Math.min(100, Number(answer.score) || 0)),
       level: answer.verdict || "需人工复核",
       summary: answer.summary || `${candidate.name} 与 ${role.title} 的匹配结果需要人工复核。`,
@@ -925,7 +925,7 @@
       : `<details class="card-details"><summary>查看完整分析</summary>${reportDetails(report)}</details>`;
     return `<article class="match-card">
       <div class="role-line">
-        <div><p class="role-name">${escapeHtml(report.role.title)}</p><p class="role-sub">${escapeHtml(report.role.location)} · ${escapeHtml(report.role.businessUnit || report.role.function)}</p></div>
+        <div><p class="role-name">${escapeHtml(report.role.title)}</p><p class="role-sub">${report.role.company ? `${escapeHtml(report.role.company)} · ` : ""}${escapeHtml(report.role.location)} · ${escapeHtml(report.role.businessUnit || report.role.function)}</p></div>
         <div class="score ${scoreClass}"><strong>${report.score}</strong><span>匹配分</span></div>
       </div>
       <div class="tag-row"><span class="tag ok">${escapeHtml(report.level)}</span><span class="tag role-match-tag">职能：${escapeHtml(report.roleMatchTag || "待确认")}</span><span class="tag jd-location-tag">JD 地点：${escapeHtml(report.role.location || "未填写")}</span><span class="tag location-match-tag">候选人地点：${escapeHtml(report.locationMatchTag || "待确认")}</span></div>
@@ -966,7 +966,7 @@
     return `<article class="hc-card">
       <div class="hc-main">
         <div class="hc-card-top"><span class="priority ${priorityClass(role.priority)}">${escapeHtml(role.priority)}</span><span class="hc-release-date">Release · ${releaseDate}</span></div>
-        <p class="hc-name" style="margin-top:7px">${escapeHtml(role.title)}</p><p class="hc-sub">${escapeHtml(role.location)} · ${escapeHtml(role.function)} · ${role.openCount} HC</p>
+        <p class="hc-name" style="margin-top:7px">${escapeHtml(role.title)}</p><p class="hc-sub">${role.company ? `${escapeHtml(role.company)} · ` : ""}${escapeHtml(role.location)} · ${escapeHtml(role.function)} · ${role.openCount} HC</p>
         <div class="hc-actions"><button class="text-action" data-action="show-jd" data-role-id="${escapeAttribute(role.id)}">查看 JD</button><button class="text-action" data-action="edit-hc" data-role-id="${escapeAttribute(role.id)}">编辑</button><button class="text-action danger" data-action="delete-hc" data-role-id="${escapeAttribute(role.id)}">删除</button></div>
       </div>
       <div class="hc-hover"><p class="hc-hover-title">历史匹配候选人</p>${candidates.length ? candidates.map((candidate) => `<div class="candidate-link"><span>${escapeHtml(candidate.name)}</span><button data-action="open-linkedin" data-url="${escapeAttribute(candidate.url)}">打开 LinkedIn</button></div>`).join("") : `<div class="candidate-link"><span>尚未匹配过候选人</span></div>`}</div>
@@ -978,7 +978,7 @@
     const productLines = [...new Set(state.hcs.map((role) => role.businessUnit || "未设置产品线"))].sort((a, b) => a.localeCompare(b, "zh-CN"));
     const search = state.hcSearch.trim().toLowerCase();
     const roles = state.hcs.filter((role) => {
-      const matchesSearch = !search || `${role.title} ${role.location} ${role.businessUnit} ${role.function} ${role.note}`.toLowerCase().includes(search);
+      const matchesSearch = !search || `${role.title} ${role.company} ${role.location} ${role.businessUnit} ${role.function} ${role.note}`.toLowerCase().includes(search);
       const matchesRegion = state.hcRegion === "all" || role.region === state.hcRegion;
       const matchesProductLine = state.hcProductLine === "all" || (role.businessUnit || "未设置产品线") === state.hcProductLine;
       return matchesSearch && matchesRegion && matchesProductLine;
@@ -1032,14 +1032,14 @@
     const role = state.modal.role;
     if (state.modal.type === "jd") {
       const candidates = candidateMatches(role.id);
-      return `<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true" aria-label="JD 详情"><div class="modal-head"><h2>${escapeHtml(role.title)}</h2><button class="icon-button" data-action="close-modal" aria-label="关闭">×</button></div><div class="modal-body"><div class="tag-row"><span class="tag">${escapeHtml(role.location)}</span><span class="tag">${escapeHtml(role.region)}</span><span class="tag">${role.openCount} HC</span><span class="tag">${escapeHtml(role.nationality || "国籍不限")}</span></div><div class="section-top"><h3 class="section-title">完整 JD</h3></div><p class="jd-note">${escapeHtml(role.note || "暂无 JD 备注。")}</p><div class="section-top"><h3 class="section-title">历史匹配用户</h3></div>${candidates.length ? candidates.map((candidate) => `<div class="candidate-link"><span>${escapeHtml(candidate.name)}</span><button data-action="open-linkedin" data-url="${escapeAttribute(candidate.url)}">打开 LinkedIn</button></div>`).join("") : `<div class="empty">该岗位尚未产生匹配记录。</div>`}</div></section></div>`;
+      return `<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true" aria-label="JD 详情"><div class="modal-head"><div><h2>${escapeHtml(role.title)}</h2>${role.company ? `<p class="modal-kicker">${escapeHtml(role.company)}</p>` : ""}</div><button class="icon-button" data-action="close-modal" aria-label="关闭">×</button></div><div class="modal-body"><div class="tag-row"><span class="tag">${escapeHtml(role.location)}</span><span class="tag">${escapeHtml(role.region)}</span><span class="tag">${role.openCount} HC</span><span class="tag">${escapeHtml(role.nationality || "国籍不限")}</span></div><div class="section-top"><h3 class="section-title">完整 JD</h3></div><p class="jd-note">${escapeHtml(role.note || "暂无 JD 备注。")}</p><div class="section-top"><h3 class="section-title">历史匹配用户</h3></div>${candidates.length ? candidates.map((candidate) => `<div class="candidate-link"><span>${escapeHtml(candidate.name)}</span><button data-action="open-linkedin" data-url="${escapeAttribute(candidate.url)}">打开 LinkedIn</button></div>`).join("") : `<div class="empty">该岗位尚未产生匹配记录。</div>`}</div></section></div>`;
     }
     const isEdit = Boolean(role);
     const value = (key, fallback = "") => escapeAttribute(role?.[key] ?? fallback);
     if (!isEdit) {
-      return `<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true" aria-label="新增岗位"><div class="modal-head"><div><h2>新增岗位</h2><p class="modal-kicker">粘贴原始需求，Peanut 自动整理字段</p></div><button class="icon-button" data-action="close-modal" aria-label="关闭">×</button></div><form class="modal-body" id="role-import-form"><label class="form-label">岗位原始内容<textarea required class="textarea role-paste-textarea" name="jobText" placeholder="直接粘贴完整 JD、聊天记录或岗位备注…" ${state.isParsingRole ? "disabled" : ""}>${escapeHtml(state.modal.draft || "")}</textarea><span class="form-help">Agent 会提取岗位名称、地点、产品线、职能、优先级、HC、负责人及 Release 日期。</span></label>${state.modal.error ? `<p class="notice">${escapeHtml(state.modal.error)}</p>` : ""}<div class="form-actions"><button type="button" class="button ghost" data-action="close-modal" ${state.isParsingRole ? "disabled" : ""}>取消</button><button type="submit" class="button primary" ${state.isParsingRole ? "disabled" : ""}>${state.isParsingRole ? "Peanut 正在整理…" : "Agent 解析并新增"}</button></div></form></section></div>`;
+      return `<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true" aria-label="新增岗位"><div class="modal-head"><div><h2>新增岗位</h2><p class="modal-kicker">粘贴原始需求，Peanut 自动整理字段</p></div><button class="icon-button" data-action="close-modal" aria-label="关闭">×</button></div><form class="modal-body" id="role-import-form"><label class="form-label">岗位原始内容<textarea required class="textarea role-paste-textarea" name="jobText" placeholder="直接粘贴完整 JD、聊天记录或岗位备注…" ${state.isParsingRole ? "disabled" : ""}>${escapeHtml(state.modal.draft || "")}</textarea><span class="form-help">Agent 会提取公司、岗位名称、地点、产品线、职能、优先级、HC、负责人及 Release 日期。</span></label>${state.modal.error ? `<p class="notice">${escapeHtml(state.modal.error)}</p>` : ""}<div class="form-actions"><button type="button" class="button ghost" data-action="close-modal" ${state.isParsingRole ? "disabled" : ""}>取消</button><button type="submit" class="button primary" ${state.isParsingRole ? "disabled" : ""}>${state.isParsingRole ? "Peanut 正在整理…" : "Agent 解析并新增"}</button></div></form></section></div>`;
     }
-    return `<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true" aria-label="岗位编辑"><div class="modal-head"><h2>${isEdit ? "编辑岗位" : "新增岗位"}</h2><button class="icon-button" data-action="close-modal" aria-label="关闭">×</button></div><form class="modal-body" id="role-form" data-role-id="${escapeAttribute(role?.id || "")}"><div class="form-grid"><label class="form-label">岗位名称<input required class="input" name="title" value="${value("title")}"></label><label class="form-label">国家 / 城市<input required class="input" name="location" value="${value("location")}"></label><label class="form-label">大区<input class="input" name="region" value="${value("region", "全球")}"></label><label class="form-label">优先级<select class="select" name="priority">${["SSS", "SS", "S"].map((item) => `<option ${value("priority", "S") === item ? "selected" : ""}>${item}</option>`).join("")}</select></label><label class="form-label">HC 数量<input required min="0" type="number" class="input" name="openCount" value="${value("openCount", 1)}"></label><label class="form-label">事业部 / 产品线<input class="input" name="businessUnit" value="${value("businessUnit", "不限产品")}"></label><label class="form-label">职能<input class="input" name="function" value="${value("function", "General")}"></label><label class="form-label">国籍要求<input class="input" name="nationality" value="${value("nationality")}"></label><label class="form-label">招聘负责人<input class="input" name="hiringManager" value="${value("hiringManager")}"></label><label class="form-label">JD / 备注<textarea class="textarea" name="note">${escapeHtml(role?.note || "")}</textarea><span class="form-help">可填写必须技能、行业、语言、地点与年资等要求。</span></label></div><div class="form-actions"><button type="button" class="button ghost" data-action="close-modal">取消</button><button type="submit" class="button primary">保存岗位</button></div></form></section></div>`;
+    return `<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true" aria-label="岗位编辑"><div class="modal-head"><h2>${isEdit ? "编辑岗位" : "新增岗位"}</h2><button class="icon-button" data-action="close-modal" aria-label="关闭">×</button></div><form class="modal-body" id="role-form" data-role-id="${escapeAttribute(role?.id || "")}"><div class="form-grid"><label class="form-label">公司<input class="input" name="company" value="${value("company")}" placeholder="未提供可留空"></label><label class="form-label">岗位名称<input required class="input" name="title" value="${value("title")}"></label><label class="form-label">国家 / 城市<input required class="input" name="location" value="${value("location")}"></label><label class="form-label">大区<input class="input" name="region" value="${value("region", "全球")}"></label><label class="form-label">优先级<select class="select" name="priority">${["SSS", "SS", "S"].map((item) => `<option ${value("priority", "S") === item ? "selected" : ""}>${item}</option>`).join("")}</select></label><label class="form-label">HC 数量<input required min="0" type="number" class="input" name="openCount" value="${value("openCount", 1)}"></label><label class="form-label">事业部 / 产品线<input class="input" name="businessUnit" value="${value("businessUnit", "不限产品")}"></label><label class="form-label">职能<input class="input" name="function" value="${value("function", "General")}"></label><label class="form-label">国籍要求<input class="input" name="nationality" value="${value("nationality")}"></label><label class="form-label">招聘负责人<input class="input" name="hiringManager" value="${value("hiringManager")}"></label><label class="form-label">JD / 备注<textarea class="textarea" name="note">${escapeHtml(role?.note || "")}</textarea><span class="form-help">可填写必须技能、行业、语言、地点与年资等要求。</span></label></div><div class="form-actions"><button type="button" class="button ghost" data-action="close-modal">取消</button><button type="submit" class="button primary">保存岗位</button></div></form></section></div>`;
   }
 
   function render() {
@@ -1301,13 +1301,20 @@
 
   async function handleImport(file) {
     if (!file) return;
-    state.flash = "正在读取 XLSX 文件…";
+    state.flash = "正在读取 Excel，Peanut 将自动识别表格结构…";
     render();
     try {
-      const rows = await SanyXlsx.parseWorkbook(await file.arrayBuffer());
-      const hcs = await SanyStore.replaceImportedRows(rows);
+      const workbook = await SanyXlsx.parseWorkbookData(await file.arrayBuffer());
+      const response = await fetch(`${AGENT_ENDPOINT}/roles/import`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ fileName: file.name, sheets: SanyXlsx.agentSheets(workbook) }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || `agent returned ${response.status}`);
+      const hcs = await SanyStore.replaceImportedRows(payload.roles || []);
       state.hcs = hcs;
-      state.flash = `已导入 ${hcs.length} 个岗位，原有岗位已替换。`;
+      state.flash = `Peanut 已整理并导入 ${hcs.length} 个岗位，原有岗位已替换。`;
     } catch (error) {
       state.flash = error?.message || "导入失败，请检查 XLSX 格式。";
     }

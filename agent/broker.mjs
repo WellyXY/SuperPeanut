@@ -9,6 +9,7 @@ const ROOT = new URL("..", import.meta.url).pathname;
 const SCHEMA = join(ROOT, "agent", "match-schema.json");
 const CV_SCHEMA = join(ROOT, "agent", "cv-schema.json");
 const ROLE_SCHEMA = join(ROOT, "agent", "role-schema.json");
+const ROLES_IMPORT_SCHEMA = join(ROOT, "agent", "roles-import-schema.json");
 const AGENT_MODEL = "gpt-5.6-luna";
 
 function send(response, status, value) {
@@ -115,7 +116,7 @@ async function extractCvText(file, temp) {
 createServer(async (request, response) => {
   if (request.method === "OPTIONS") return send(response, 204, {});
   if (request.method === "GET" && request.url === "/health") return send(response, 200, { ok: true, mode: "fast", agentModel: AGENT_MODEL });
-  if (request.method !== "POST" || !["/match", "/chat", "/resume", "/role"].includes(request.url)) return send(response, 404, { error: "not found" });
+  if (request.method !== "POST" || !["/match", "/chat", "/resume", "/role", "/roles/import"].includes(request.url)) return send(response, 404, { error: "not found" });
   let body = "";
   for await (const chunk of request) {
     body += chunk;
@@ -123,6 +124,31 @@ createServer(async (request, response) => {
   }
   try {
     const input = JSON.parse(body);
+    if (request.url === "/roles/import") {
+      const sheets = (Array.isArray(input?.sheets) ? input.sheets : []).slice(0, 20).map((sheet, sheetIndex) => ({
+        name: String(sheet?.name || `Sheet ${sheetIndex + 1}`).slice(0, 120),
+        rows: (Array.isArray(sheet?.rows) ? sheet.rows : []).slice(0, 600).map((row) =>
+          (Array.isArray(row) ? row : []).slice(0, 60).map((cell) => String(cell ?? "").slice(0, 6000))
+        ),
+      })).filter((sheet) => sheet.rows.some((row) => row.some((cell) => cell.trim())));
+      if (!sheets.length) throw new Error("Excel 中没有可读取的工作表内容");
+      const temp = await mkdtemp(join(tmpdir(), "sany-roles-import-"));
+      try {
+        const output = join(temp, "roles.json");
+        const today = new Date().toISOString().slice(0, 10);
+        const prompt = `You are a recruiting operations import agent. Convert the COMPLETE raw Excel workbook below into standardized HC records using the supplied JSON schema. The workbook format is arbitrary: the header may not be the first row, columns may use any language or names, JD text may span multiple columns, and relevant rows may appear across multiple sheets. Identify actual job rows and ignore title banners, blank rows, totals, instructions, legends, and decorative content. Preserve the source row order across sheets.
+
+Use only explicit source facts; never invent missing data. company is the explicitly named hiring company/employer, not a candidate's past employer, brand example, customer, product, recruiter, or hiring manager; use "" when absent. title must be the actual job title and rows without a discernible job title must be skipped. location must preserve all explicit country/city/base details; use "未填写地点" only when absent. businessUnit is the product line or business unit; use "不限产品" when absent. function is the job function such as Sales & Marketing, Technical, Service, HR, Finance, or General. region may be inferred only from an explicit country, otherwise "全球". priority must be SSS, SS, or S; normalize equivalent labels and use S when absent. openCount uses the explicit HC/headcount, otherwise 1. nationality and hiringManager are "" when absent. updatedAt uses the explicit release/update date as YYYY-MM-DD; Excel serial dates should be converted when clearly dates; use ${today} when absent. note must combine and retain ALL material unassigned source cells for the job, including full JD, responsibilities, requirements, location remarks, language, experience, compensation, restrictions, and free-form comments. Remove only duplicated formatting noise. Do not merge different jobs. Return JSON only through the schema.
+
+Workbook:
+${JSON.stringify(sheets)}`;
+        await runCodex(prompt, output, ROLES_IMPORT_SCHEMA, "low");
+        const result = JSON.parse(await readFile(output, "utf8"));
+        return send(response, 200, { roles: Array.isArray(result.roles) ? result.roles : [] });
+      } finally {
+        await rm(temp, { recursive: true, force: true });
+      }
+    }
     if (request.url === "/role") {
       const jobText = String(input?.jobText || "").trim();
       if (jobText.length < 8) throw new Error("请粘贴更完整的岗位内容");
@@ -130,7 +156,7 @@ createServer(async (request, response) => {
       try {
         const output = join(temp, "role.json");
         const today = new Date().toISOString().slice(0, 10);
-        const prompt = `You are a recruiting operations data-entry agent. Convert the pasted raw job requirement into exactly one structured HC record using the supplied JSON schema. Use only facts in the source; do not invent requirements. Write human-readable fields in Simplified Chinese while preserving proper nouns. title is the job title. location must preserve every explicit country/city/base location. businessUnit is the stated product line or business unit; use "不限产品" only when absent. function is the job function such as Sales & Marketing, Technical, Service, HR, Finance, or General. region is the explicit region, or infer only from an explicitly stated country; otherwise use "全球". priority must be SSS, SS, or S; if absent use S. openCount must use the explicit HC count, otherwise 1. nationality and hiringManager must be empty strings when absent. updatedAt is the explicit release/update date normalized as YYYY-MM-DD; if absent use today's date ${today}. note must retain ALL material source content and requirements, including location details, product scope, experience, language, customer, compensation, restrictions, and free-form remarks. Clean formatting and duplicates but do not shorten away details. Return JSON only through the schema.\n\nRaw job requirement:\n${jobText.slice(0, 80000)}`;
+        const prompt = `You are a recruiting operations data-entry agent. Convert the pasted raw job requirement into exactly one structured HC record using the supplied JSON schema. Use only facts in the source; do not invent requirements. Write human-readable fields in Simplified Chinese while preserving proper nouns. title is the job title. company is the explicitly named hiring company or employer; use an empty string when absent and never infer it from a brand, product, recruiter, or candidate company. location must preserve every explicit country/city/base location. businessUnit is the stated product line or business unit; use "不限产品" only when absent. function is the job function such as Sales & Marketing, Technical, Service, HR, Finance, or General. region is the explicit region, or infer only from an explicitly stated country; otherwise use "全球". priority must be SSS, SS, or S; if absent use S. openCount must use the explicit HC count, otherwise 1. nationality and hiringManager must be empty strings when absent. updatedAt is the explicit release/update date normalized as YYYY-MM-DD; if absent use today's date ${today}. note must retain ALL material source content and requirements, including location details, product scope, experience, language, customer, compensation, restrictions, and free-form remarks. Clean formatting and duplicates but do not shorten away details. Return JSON only through the schema.\n\nRaw job requirement:\n${jobText.slice(0, 80000)}`;
         await runCodex(prompt, output, ROLE_SCHEMA, "low");
         const result = JSON.parse(await readFile(output, "utf8"));
         return send(response, 200, result);

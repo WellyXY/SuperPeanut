@@ -81,15 +81,16 @@ async function writeHcs(client, userId, hcs) {
     const hcId = String(role.id || `hc_${Date.now()}_${index}`);
     ids.push(hcId);
     await client.query(`INSERT INTO hcs (
-      user_id, hc_id, priority, business_unit, function_name, region, title, location,
+      user_id, hc_id, priority, business_unit, function_name, region, title, company, location,
       nationality, open_count, note, hiring_manager, release_date, payload, sort_order
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15)
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16)
     ON CONFLICT (user_id, hc_id) DO UPDATE SET
       priority = EXCLUDED.priority,
       business_unit = EXCLUDED.business_unit,
       function_name = EXCLUDED.function_name,
       region = EXCLUDED.region,
       title = EXCLUDED.title,
+      company = EXCLUDED.company,
       location = EXCLUDED.location,
       nationality = EXCLUDED.nationality,
       open_count = EXCLUDED.open_count,
@@ -106,6 +107,7 @@ async function writeHcs(client, userId, hcs) {
       String(role.function || "General"),
       String(role.region || "全球"),
       String(role.title || "未命名岗位"),
+      String(role.company || ""),
       String(role.location || "未填写地点"),
       String(role.nationality || ""),
       Number.isFinite(Number(role.openCount)) ? Math.max(0, Number(role.openCount)) : 1,
@@ -198,6 +200,7 @@ async function adminSnapshot() {
   const [dashboardResult, hcsResult, usersResult, matchesResult, trendsResult] = await Promise.all([
     pool.query(`WITH hc_base AS (
       SELECT user_id, hc_id,
+        lower(regexp_replace(trim(company), '\\s+', ' ', 'g')) || '|' ||
         lower(regexp_replace(trim(title), '\\s+', ' ', 'g')) || '|' ||
         lower(regexp_replace(regexp_replace(trim(location), '[,，;；(（].*$', ''), '\\s+', ' ', 'g')) AS canonical_key
       FROM hcs
@@ -215,19 +218,22 @@ async function adminSnapshot() {
         WHERE (mh.created_at AT TIME ZONE 'America/Los_Angeles')::date >= (NOW() AT TIME ZONE 'America/Los_Angeles')::date - 6
           AND mh.matched_hc_id IS NOT NULL AND NOT mh.no_fit) AS "matchedHcs7d",
       (SELECT COUNT(*)::int FROM users) AS "totalUsers",
-      (SELECT COUNT(DISTINCT lower(regexp_replace(trim(title), '\\s+', ' ', 'g')) || '|' ||
+      (SELECT COUNT(DISTINCT lower(regexp_replace(trim(company), '\\s+', ' ', 'g')) || '|' ||
+        lower(regexp_replace(trim(title), '\\s+', ' ', 'g')) || '|' ||
         lower(regexp_replace(regexp_replace(trim(location), '[,，;；(（].*$', ''), '\\s+', ' ', 'g')))::int FROM hcs) AS "uniqueHcs",
       (SELECT COUNT(*)::int FROM hcs) AS "totalHcInstances",
       (SELECT COUNT(*)::int FROM match_history) AS "totalMatches"`),
     pool.query(`WITH hc_base AS (
-      SELECT user_id, hc_id, title, location, business_unit, function_name, region, priority,
+      SELECT user_id, hc_id, title, company, location, business_unit, function_name, region, priority,
         open_count, note, hiring_manager, release_date,
+        lower(regexp_replace(trim(company), '\\s+', ' ', 'g')) || '|' ||
         lower(regexp_replace(trim(title), '\\s+', ' ', 'g')) || '|' ||
         lower(regexp_replace(regexp_replace(trim(location), '[,，;；(（].*$', ''), '\\s+', ' ', 'g')) AS canonical_key
       FROM hcs
     )
     SELECT hb.canonical_key AS "key",
       MIN(hb.title) AS title,
+      MIN(hb.company) AS company,
       MIN(hb.location) AS location,
       MIN(hb.business_unit) AS "businessUnit",
       MIN(hb.function_name) AS function,
@@ -269,6 +275,7 @@ async function adminSnapshot() {
     ORDER BY u.last_seen_at DESC`),
     pool.query(`WITH hc_base AS (
       SELECT user_id, hc_id, title,
+        lower(regexp_replace(trim(company), '\\s+', ' ', 'g')) || '|' ||
         lower(regexp_replace(trim(title), '\\s+', ' ', 'g')) || '|' ||
         lower(regexp_replace(regexp_replace(trim(location), '[,，;；(（].*$', ''), '\\s+', ' ', 'g')) AS canonical_key
       FROM hcs
@@ -300,6 +307,7 @@ async function adminSnapshot() {
       )::date AS day
     ), hc_base AS (
       SELECT user_id, hc_id,
+        lower(regexp_replace(trim(company), '\\s+', ' ', 'g')) || '|' ||
         lower(regexp_replace(trim(title), '\\s+', ' ', 'g')) || '|' ||
         lower(regexp_replace(regexp_replace(trim(location), '[,，;；(（].*$', ''), '\\s+', ' ', 'g')) AS canonical_key
       FROM hcs
@@ -358,6 +366,7 @@ async function migrate() {
       function_name TEXT NOT NULL DEFAULT 'General',
       region TEXT NOT NULL DEFAULT '全球',
       title TEXT NOT NULL,
+      company TEXT NOT NULL DEFAULT '',
       location TEXT NOT NULL,
       nationality TEXT NOT NULL DEFAULT '',
       open_count INTEGER NOT NULL DEFAULT 1 CHECK (open_count >= 0),
@@ -370,6 +379,7 @@ async function migrate() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       PRIMARY KEY (user_id, hc_id)
     )`);
+    await client.query("ALTER TABLE hcs ADD COLUMN IF NOT EXISTS company TEXT NOT NULL DEFAULT ''");
     await client.query(`CREATE TABLE IF NOT EXISTS match_history (
       user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       record_id TEXT NOT NULL,
@@ -456,7 +466,7 @@ createServer(async (request, response) => {
       (SELECT COUNT(*)::int FROM users) AS users,
       (SELECT COUNT(*)::int FROM hcs) AS hcs,
       (SELECT COUNT(*)::int FROM match_history) AS match_history`);
-    return send(response, 200, { ok: true, schemaVersion: 2, tables: result.rows[0] });
+    return send(response, 200, { ok: true, schemaVersion: 3, tables: result.rows[0] });
   }
   if (request.method !== "POST" || !["/v1/state/read", "/v1/state/write"].includes(pathname)) {
     return send(response, 404, { error: "not found" });

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "roles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": { "type": "string" },
+          "company": { "type": "string" },
+          "location": { "type": "string" },
+          "businessUnit": { "type": "string" },
+          "function": { "type": "string" },
+          "region": { "type": "string" },
+          "priority": { "type": "string", "enum": ["SSS", "SS", "S"] },
+          "openCount": { "type": "integer", "minimum": 0 },
+          "nationality": { "type": "string" },
+          "hiringManager": { "type": "string" },
+          "updatedAt": { "type": "string" },
+          "note": { "type": "string" }
+        },
+        "required": ["title", "company", "location", "businessUnit", "function", "region", "priority", "openCount", "nationality", "hiringManager", "updatedAt", "note"]
+      }
+    }
+  },
+  "required": ["roles"]
+}

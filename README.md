@@ -9,7 +9,7 @@ SuperPeanut 是一个侧载式 Chrome Extension，用于在 LinkedIn 候选人�
 - 匹配 Loading 中 Peanut 会与白色卷毛狗 Mochi 一起奔跑
 - 读取候选人当前职位、地点、工作经历与教育背景
 - 基于完整 HC/JD 生成单一最佳岗位报告
-- HC 支持 XLSX 导入、Agent 粘贴新增、编辑与删除
+- HC 支持任意栏位结构的 XLSX Agent 导入、粘贴新增、Company、编辑与删除
 - HC 可按日期、优先级、大区和产品线筛选
 - 查询记录保存候选人快照、LinkedIn 链接与历史报告
 - Peanut 对话支持当前候选人上下文及 CV 上传
@@ -32,7 +32,7 @@ SuperPeanut 是一个侧载式 Chrome Extension，用于在 LinkedIn 候选人�
 
 在「HC 库」中可以：
 
-- 导入 XLSX；支持 `岗位名称`、`国家/城市`、`事业部/产品线`、`职能`、`大区`、`优先级`、`HC`、`备注/JD`、`招聘负责人`、`更新日期` 等列。
+- 导入 XLSX；浏览器读取所有 Sheet 的原始储存格，再由 Peanut 识别标题列与任意语言栏名，统一转换为含 Company 的标准 HC。
 - 直接粘贴一整段岗位需求，由 Peanut 自动整理为结构化 HC。
 - 查看、编辑、删除及按产品线 Tag 筛选。
 
@@ -44,6 +44,7 @@ SuperPeanut 是一个侧载式 Chrome Extension，用于在 LinkedIn 候选人�
 - `POST /chat`
 - `POST /resume`
 - `POST /role`
+- `POST /roles/import`
 
 本机启动：
 

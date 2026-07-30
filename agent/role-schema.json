@@ -8,6 +8,7 @@
       "additionalProperties": false,
       "properties": {
         "title": { "type": "string" },
+        "company": { "type": "string" },
         "location": { "type": "string" },
         "businessUnit": { "type": "string" },
         "function": { "type": "string" },
@@ -19,7 +20,7 @@
         "updatedAt": { "type": "string" },
         "note": { "type": "string" }
       },
-      "required": ["title", "location", "businessUnit", "function", "region", "priority", "openCount", "nationality", "hiringManager", "updatedAt", "note"]
+      "required": ["title", "company", "location", "businessUnit", "function", "region", "priority", "openCount", "nationality", "hiringManager", "updatedAt", "note"]
     }
   },
   "required": ["role"]

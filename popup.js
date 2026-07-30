@@ -1,5 +1,6 @@
 const count = document.querySelector("#hc-count");
 const message = document.querySelector("#message");
+const AGENT_ENDPOINT = "https://sany-agent-temp.racoonn.me";
 
 async function updateCount() {
   try {
@@ -24,11 +25,18 @@ document.querySelector("#open-panel").addEventListener("click", async () => {
 document.querySelector("#import-file").addEventListener("change", async (event) => {
   const file = event.target.files?.[0];
   if (!file) return;
-  message.textContent = "正在读取 XLSX 文件…";
+  message.textContent = "正在读取 Excel，Peanut 将自动识别表格结构…";
   try {
-    const rows = await SanyXlsx.parseWorkbook(await file.arrayBuffer());
-    const hcs = await SanyStore.replaceImportedRows(rows);
-    message.textContent = `已导入 ${hcs.length} 个岗位，LinkedIn 面板会自动同步。`;
+    const workbook = await SanyXlsx.parseWorkbookData(await file.arrayBuffer());
+    const response = await fetch(`${AGENT_ENDPOINT}/roles/import`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ fileName: file.name, sheets: SanyXlsx.agentSheets(workbook) }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `agent returned ${response.status}`);
+    const hcs = await SanyStore.replaceImportedRows(payload.roles || []);
+    message.textContent = `Peanut 已整理并导入 ${hcs.length} 个岗位，LinkedIn 面板会自动同步。`;
     await updateCount();
   } catch (error) {
     message.textContent = error?.message || "导入失败，请检查文件格式。";

@@ -73,11 +73,11 @@ function dashboardView() {
 
 function hcsTable(rows) {
   if (!rows.length) return tableEmpty("沒有符合條件的 HC");
-  return `<div class="table-wrap"><table><thead><tr><th>HC</th><th>產品線</th><th>優先級</th><th>Users</th><th>候選人</th><th>最近匹配</th></tr></thead><tbody>${rows.map((hc) => `<tr data-route="hc/${encodeURIComponent(hc.key)}"><td><div class="primary">${escapeHtml(hc.title)}</div><div class="secondary">${escapeHtml(hc.location)}</div></td><td>${escapeHtml(hc.businessUnit)}</td><td><span class="tag">${escapeHtml(hc.priority)}</span></td><td class="numeric">${number(hc.userCount)}</td><td class="numeric">${number(hc.matchCount)}</td><td class="numeric">${date(hc.lastMatchedAt)}</td></tr>`).join("")}</tbody></table></div>`;
+  return `<div class="table-wrap"><table><thead><tr><th>HC</th><th>公司</th><th>產品線</th><th>優先級</th><th>Users</th><th>候選人</th><th>最近匹配</th></tr></thead><tbody>${rows.map((hc) => `<tr data-route="hc/${encodeURIComponent(hc.key)}"><td><div class="primary">${escapeHtml(hc.title)}</div><div class="secondary">${escapeHtml(hc.location)}</div></td><td>${escapeHtml(hc.company || "未提供")}</td><td>${escapeHtml(hc.businessUnit)}</td><td><span class="tag">${escapeHtml(hc.priority)}</span></td><td class="numeric">${number(hc.userCount)}</td><td class="numeric">${number(hc.matchCount)}</td><td class="numeric">${date(hc.lastMatchedAt)}</td></tr>`).join("")}</tbody></table></div>`;
 }
 
 function hcsView() {
-  const rows = snapshot.hcs.filter((hc) => includesSearch(hc.title, hc.location, hc.businessUnit, hc.function, hc.note));
+  const rows = snapshot.hcs.filter((hc) => includesSearch(hc.title, hc.company, hc.location, hc.businessUnit, hc.function, hc.note));
   return `<div class="metrics">${metric("去重 HC", rows.length, `原始 ${number(snapshot.dashboard.totalHcInstances)} 個 user instances`)}${metric("總 HC 數量", rows.reduce((sum, hc) => sum + Number(hc.totalOpenCount || 0), 0), "所有 user headcount 合計")}${metric("有候選人的 HC", rows.filter((hc) => Number(hc.matchCount) > 0).length, "至少完成一次匹配")}${metric("累計候選人", rows.reduce((sum, hc) => sum + Number(hc.matchCount || 0), 0), "去重後的候選人")}</div><section class="section"><div class="section-head"><h2>HC List</h2><span>${number(rows.length)} 個結果</span></div>${hcsTable(rows)}</section>`;
 }
 
@@ -102,7 +102,7 @@ function hcDetail(key) {
   const hc = snapshot.hcs.find((item) => item.key === key);
   if (!hc) return tableEmpty("找不到這個 HC");
   const candidates = dedupeCandidates(snapshot.matches.filter((item) => item.hcKey === key));
-  return `<section class="detail-header"><div><button class="back" data-route="hcs">返回 HC List</button><h2>${escapeHtml(hc.title)}</h2><p>${escapeHtml(hc.location)} · ${escapeHtml(hc.businessUnit)} · ${escapeHtml(hc.function)}</p><p>${escapeHtml(hc.note || "未提供 JD 備註")}</p></div><div class="detail-score"><strong>${number(hc.matchCount)}</strong><span>匹配候選人</span></div></section><section class="section"><div class="section-head"><h2>候選人介紹</h2><span>${number(candidates.length)} 位</span></div>${candidateCards(candidates)}</section>`;
+  return `<section class="detail-header"><div><button class="back" data-route="hcs">返回 HC List</button><h2>${escapeHtml(hc.title)}</h2><p>${escapeHtml(hc.company || "未提供公司")} · ${escapeHtml(hc.location)} · ${escapeHtml(hc.businessUnit)} · ${escapeHtml(hc.function)}</p><p>${escapeHtml(hc.note || "未提供 JD 備註")}</p></div><div class="detail-score"><strong>${number(hc.matchCount)}</strong><span>匹配候選人</span></div></section><section class="section"><div class="section-head"><h2>候選人介紹</h2><span>${number(candidates.length)} 位</span></div>${candidateCards(candidates)}</section>`;
 }
 
 function candidateCards(rows) {
