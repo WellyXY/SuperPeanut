@@ -8,7 +8,7 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : undefined,
 });
-const EMPTY = { hcs: [], history: [], messages: [] };
+const EMPTY = { hcs: [], history: [], messages: [], skills: [] };
 const PUBLIC_ROOT = new URL("./public/", import.meta.url);
 
 function workspaceHash(key) {
@@ -46,7 +46,7 @@ async function readBody(request) {
   let body = "";
   for await (const chunk of request) {
     body += chunk;
-    if (body.length > 1_500_000) throw new Error("payload too large");
+    if (body.length > 4_000_000) throw new Error("payload too large");
   }
   return body ? JSON.parse(body) : {};
 }
@@ -57,6 +57,7 @@ function safeState(value) {
     hcs: Array.isArray(state.hcs) ? state.hcs.slice(0, 500) : [],
     history: Array.isArray(state.history) ? state.history.slice(0, 200) : [],
     messages: Array.isArray(state.messages) ? state.messages.slice(-60) : [],
+    skills: Array.isArray(state.skills) ? state.skills.slice(0, 100) : [],
   };
 }
 
@@ -194,6 +195,34 @@ async function writeMessages(client, userId, messages) {
       JSON.stringify(message),
     ]);
   }
+}
+
+async function writeCompanySkills(client, userId, skills) {
+  const companies = [];
+  for (const source of skills) {
+    const skill = source && typeof source === "object" ? source : {};
+    const company = String(skill.company || "").trim();
+    if (!company || !skill.name || !skill.description || !skill.content) continue;
+    companies.push(company);
+    await client.query(`INSERT INTO company_skills (
+      user_id, company, skill_name, description, content, payload, updated_at
+    ) VALUES ($1,$2,$3,$4,$5,$6::jsonb,NOW())
+    ON CONFLICT (user_id, company) DO UPDATE SET
+      skill_name = EXCLUDED.skill_name,
+      description = EXCLUDED.description,
+      content = EXCLUDED.content,
+      payload = EXCLUDED.payload,
+      updated_at = NOW()`, [
+      userId,
+      company,
+      String(skill.name),
+      String(skill.description),
+      String(skill.content),
+      JSON.stringify({ ...skill, company }),
+    ]);
+  }
+  if (companies.length) await client.query("DELETE FROM company_skills WHERE user_id = $1 AND NOT (company = ANY($2::text[]))", [userId, companies]);
+  else await client.query("DELETE FROM company_skills WHERE user_id = $1", [userId]);
 }
 
 async function adminSnapshot() {
@@ -341,10 +370,12 @@ async function readState(client, userId) {
   const hcResult = await client.query("SELECT payload FROM hcs WHERE user_id = $1 ORDER BY sort_order ASC, created_at ASC", [userId]);
   const historyResult = await client.query("SELECT record FROM match_history WHERE user_id = $1 ORDER BY created_at DESC LIMIT 200", [userId]);
   const messageResult = await client.query("SELECT payload FROM agent_messages WHERE user_id = $1 ORDER BY position ASC", [userId]);
+  const skillResult = await client.query("SELECT payload FROM company_skills WHERE user_id = $1 ORDER BY company ASC", [userId]);
   return {
     hcs: hcResult.rows.map((row) => row.payload),
     history: historyResult.rows.map((row) => row.record),
     messages: messageResult.rows.map((row) => row.payload),
+    skills: skillResult.rows.map((row) => row.payload),
   };
 }
 
@@ -415,6 +446,32 @@ async function migrate() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       PRIMARY KEY (user_id, event_id)
     )`);
+    await client.query(`CREATE TABLE IF NOT EXISTS company_skills (
+      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      company TEXT NOT NULL,
+      skill_name TEXT NOT NULL,
+      description TEXT NOT NULL,
+      content TEXT NOT NULL,
+      payload JSONB NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (user_id, company)
+    )`);
+    await client.query(`CREATE TABLE IF NOT EXISTS schema_migrations (
+      name TEXT PRIMARY KEY,
+      applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+    const companyBackfill = await client.query(`INSERT INTO schema_migrations (name)
+      VALUES ('2026-07-30-backfill-sany-company')
+      ON CONFLICT (name) DO NOTHING
+      RETURNING name`);
+    if (companyBackfill.rowCount) {
+      await client.query(`UPDATE hcs
+        SET company = '三一重工',
+            payload = jsonb_set(payload, '{company}', to_jsonb('三一重工'::text), true),
+            updated_at = NOW()
+        WHERE trim(company) = '' OR trim(company) LIKE '三一%' OR lower(trim(company)) ~ '^sany(\\s|$)'`);
+    }
     await client.query(`INSERT INTO agent_comment_events (user_id, event_id, role, content, payload, created_at)
       SELECT user_id, 'legacy_' || md5(role || '|' || content), role, content, payload, created_at
       FROM agent_messages
@@ -424,6 +481,7 @@ async function migrate() {
     await client.query("CREATE INDEX IF NOT EXISTS history_user_created_idx ON match_history (user_id, created_at DESC)");
     await client.query("CREATE INDEX IF NOT EXISTS history_candidate_url_idx ON match_history (user_id, candidate_url)");
     await client.query("CREATE INDEX IF NOT EXISTS agent_events_created_idx ON agent_comment_events (created_at DESC)");
+    await client.query("CREATE INDEX IF NOT EXISTS company_skills_user_idx ON company_skills (user_id, company)");
 
     const legacyExists = await client.query("SELECT to_regclass('public.superpeanut_workspaces') AS table_name");
     if (legacyExists.rows[0]?.table_name) {
@@ -465,8 +523,9 @@ createServer(async (request, response) => {
     const result = await pool.query(`SELECT
       (SELECT COUNT(*)::int FROM users) AS users,
       (SELECT COUNT(*)::int FROM hcs) AS hcs,
-      (SELECT COUNT(*)::int FROM match_history) AS match_history`);
-    return send(response, 200, { ok: true, schemaVersion: 3, tables: result.rows[0] });
+      (SELECT COUNT(*)::int FROM match_history) AS match_history,
+      (SELECT COUNT(*)::int FROM company_skills) AS company_skills`);
+    return send(response, 200, { ok: true, schemaVersion: 4, tables: result.rows[0] });
   }
   if (request.method !== "POST" || !["/v1/state/read", "/v1/state/write"].includes(pathname)) {
     return send(response, 404, { error: "not found" });
@@ -486,9 +545,11 @@ createServer(async (request, response) => {
 
     const input = await readBody(request);
     const state = safeState(input.state);
+    const shouldWriteSkills = Array.isArray(input?.state?.skills);
     await writeHcs(client, userId, state.hcs);
     await writeHistory(client, userId, state.history);
     await writeMessages(client, userId, state.messages);
+    if (shouldWriteSkills) await writeCompanySkills(client, userId, state.skills);
     await client.query("COMMIT");
     return send(response, 200, { state: await readState(pool, userId), updatedAt: new Date().toISOString() });
   } catch (error) {

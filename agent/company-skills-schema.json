@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "skills": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "company": { "type": "string" },
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "content": { "type": "string" }
+        },
+        "required": ["company", "name", "description", "content"]
+      }
+    }
+  },
+  "required": ["skills"]
+}

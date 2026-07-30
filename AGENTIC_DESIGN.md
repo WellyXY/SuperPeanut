@@ -12,7 +12,8 @@ Graduation and career dates can only be displayed as a neutral timeline for manu
 LinkedIn profile
   -> Profile Reader
   -> Normalizer + completeness gate
-  -> HC Retriever
+  -> Company Skill Router (tool use)
+  -> Selected company introduction + Skill + complete company HC
   -> Match Reasoner
   -> Evidence / risk verifier
   -> Ranked recruiter report + history snapshot
@@ -27,13 +28,17 @@ The extension reads the active candidate only on recruiter action. It captures p
 
 Raw page sections become a canonical candidate record. The system confirms identity and URL, labels missing location as `unknown`, shows experience and education counts, marks career duration as an estimate, and never silently infers missing facts.
 
-### HC retrieval
+### Company Skill generation
 
-The HC store is the source of truth for title, location, function, business unit, priority, headcount, and full JD. It first filters closed roles and explicit geographic impossibilities, then passes the remaining original JD text to the reasoner.
+Company is required for matching. An import may preserve a missing-company HC for correction, but it is excluded until Company is filled. The first HC save for a new company generates one persistent company Skill from that company's complete HC/JD source. Its first section is a factual company introduction, followed by hard gates, soft assessment, role positioning, recommendation, report contract, and evidence discipline. Missing company policy is omitted rather than invented. 三一重工 uses the maintained SANY Skill whose requirements match the previous SANY Match Agent.
+
+### Company Skill router
+
+The broker writes the candidate, a routing index, and each company's Skill and full HC set into separate temporary files. In one Codex run, the Agent must use shell tools to read the candidate and index, choose at most one plausible company, then read exactly that company's Skill and roles. If no company description plausibly matches the candidate's location, function, product/domain, customer/channel context, and seniority, it returns no report without loading another company Skill.
 
 ### Match reasoner
 
-The local Codex agent evaluates each plausible role separately for functional/domain fit, seniority, location, explicit JD requirements, transferable experience, and risks. It returns at most five roles. Every positive claim must be grounded in captured profile evidence; missing requirements become interview checks, not invented skills.
+The local Codex agent follows the selected company's complete Skill, reads every HC and full note for that company, and returns exactly one strongest role only when its hard gates pass. Every positive claim must be grounded in captured profile evidence; missing requirements become interview checks, not invented skills.
 
 ### Verifier and report contract
 
@@ -45,9 +50,9 @@ The next UI increment adds **shortlist**, **not suitable**, **contacted**, **hir
 
 ## Data boundaries
 
-- Current build sends data only to the local broker at `127.0.0.1:8787`.
+- The extension reaches the local Codex broker through the configured Cloudflare Tunnel; Railway stores each anonymous workspace separately.
 - The broker invokes the signed-in local Codex CLI in read-only mode; LinkedIn credentials and page sessions are not sent to it.
-- History is created only after a report is generated and stores the profile snapshot, reports, and timestamp.
+- History is created for both matched and no-fit results and stores the profile snapshot, reports, and timestamp.
 - Any future shared service requires authentication, encryption, access control, audit logs, retention/deletion controls, and a visible recruiter notice.
 
 ## Quality gates

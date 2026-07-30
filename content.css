@@ -541,6 +541,9 @@
 .candidate-facts b,.dimension,.pros-cons p,.report-section p,.assessment-grid b { font-size:12px; }
 .decision-block h3,.highlight-item b,.fit-item b { font-size:12px; }.decision-block p,.decision-block ul,.decision-block ol,.fit-item p { font-size:12px; line-height:1.68; }
 .fit-status { font-size:11px; }.form-label,.form-help,.notice { font-size:12px; }
+.notice.is-error,.company-warning { border:1px solid #efb5ad; background:#fff0ed; color:#a83d32; }
+.company-warning { display:grid; gap:3px; margin:0 0 11px; padding:10px 11px; border-radius:10px; font-size:12px; line-height:1.45; }
+.company-warning b { font-size:12px; }.company-warning span { color:#8f4d45; }
 @media (max-width: 520px) { .sany-panel { width:100%; } }
 
 /* Draggable Peanut anchor with the panel pinned to its left. */

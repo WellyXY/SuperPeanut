@@ -47,11 +47,14 @@
     networkNotice: "",
     networkDebug: null,
     agentMessages: [],
+    companySkills: [],
     agentDraft: "",
     isAgentReplying: false,
     agentStreamingId: null,
     isUploadingCv: false,
     isParsingRole: false,
+    isGeneratingSkills: false,
+    flashTone: "",
     petPosition: null,
     petDrag: null,
     suppressPetClickUntil: 0,
@@ -979,6 +982,7 @@
     const regions = [...new Set(state.hcs.map((role) => role.region).filter(Boolean))].sort();
     const productLines = [...new Set(state.hcs.map((role) => role.businessUnit || "未设置产品线"))].sort((a, b) => a.localeCompare(b, "zh-CN"));
     const search = state.hcSearch.trim().toLowerCase();
+    const missingCompanyCount = state.hcs.filter((role) => !String(role.company || "").trim()).length;
     const roles = state.hcs.filter((role) => {
       const matchesSearch = !search || `${role.title} ${role.company} ${role.location} ${role.businessUnit} ${role.function} ${role.note}`.toLowerCase().includes(search);
       const matchesCompany = state.hcCompany === "all" || (role.company || "未提供公司") === state.hcCompany;
@@ -998,7 +1002,8 @@
       return bTime - aTime || titleOrder;
     });
     return `
-      ${state.flash ? `<p class="notice">${escapeHtml(state.flash)}</p>` : ""}
+      ${state.flash ? `<p class="notice ${state.flashTone === "error" ? "is-error" : ""}">${escapeHtml(state.flash)}</p>` : ""}
+      ${missingCompanyCount ? `<p class="company-warning"><b>${missingCompanyCount} 个 HC 未填写公司</b><span>请编辑补充 Company；未填写公司的 HC 不会参与匹配。</span></p>` : ""}
       <div class="filter-row"><input class="input" data-control="hc-search" value="${escapeAttribute(state.hcSearch)}" placeholder="搜索岗位、地点或关键词"><select class="select" data-control="hc-region" aria-label="按大区筛选"><option value="all">全部大区</option>${regions.map((region) => `<option value="${escapeAttribute(region)}" ${state.hcRegion === region ? "selected" : ""}>${escapeHtml(region)}</option>`).join("")}</select><select class="select" data-control="hc-sort" aria-label="岗位排序"><option value="date" ${state.hcSort === "date" ? "selected" : ""}>日期：新→旧</option><option value="priority" ${state.hcSort === "priority" ? "selected" : ""}>优先级：SSS→S</option></select></div>
       <div class="company-filter"><span class="product-filter-label">公司</span><div class="company-filter-tabs"><button class="product-filter-tag ${state.hcCompany === "all" ? "is-active" : ""}" data-action="filter-company" data-company="all">全部</button>${companies.map((company) => `<button class="product-filter-tag ${state.hcCompany === company ? "is-active" : ""}" data-action="filter-company" data-company="${escapeAttribute(company)}">${escapeHtml(company)}</button>`).join("")}</div></div>
       <div class="product-filter"><div class="product-filter-head"><span class="product-filter-label">产品线</span><button class="product-filter-toggle" data-action="toggle-product-lines">${state.hcProductLinesExpanded ? "收起" : "展开全部"}</button></div><div class="product-filter-tags ${state.hcProductLinesExpanded ? "is-expanded" : ""}"><button class="product-filter-tag ${state.hcProductLine === "all" ? "is-active" : ""}" data-action="filter-product-line" data-product-line="all">全部</button>${productLines.map((line) => `<button class="product-filter-tag ${state.hcProductLine === line ? "is-active" : ""}" data-action="filter-product-line" data-product-line="${escapeAttribute(line)}">${escapeHtml(line)}</button>`).join("")}</div></div>
@@ -1113,12 +1118,55 @@
 
   async function refreshData({ rescan = false } = {}) {
     try {
-      [state.hcs, state.history, state.agentMessages] = await Promise.all([SanyStore.getHcs(), SanyStore.getHistory(), SanyStore.getAgentMessages()]);
+      [state.hcs, state.history, state.agentMessages, state.companySkills] = await Promise.all([SanyStore.getHcs(), SanyStore.getHistory(), SanyStore.getAgentMessages(), SanyStore.getCompanySkills()]);
     } catch (error) {
       state.networkNotice = `数据服务暂不可用：${error?.message || "连接失败"}。Peanut 仍可打开，请稍后重试。`;
     }
     if (rescan || !state.candidate) state.candidate = scanCandidate();
     render();
+  }
+
+  async function ensureCompanySkillsForRoles(roles) {
+    const groups = new Map();
+    for (const role of Array.isArray(roles) ? roles : []) {
+      const company = SanyStore.normalizeCompany(role?.company);
+      if (!company) continue;
+      if (!groups.has(company)) groups.set(company, []);
+      groups.get(company).push({ ...role, company });
+    }
+    const existingCompanies = new Set(state.companySkills.map((skill) => SanyStore.normalizeCompany(skill.company)));
+    const missing = [...groups.entries()]
+      .filter(([company]) => !existingCompanies.has(company))
+      .map(([company, companyRoles]) => ({ company, roles: companyRoles }));
+    if (!missing.length) return { generated: 0 };
+
+    state.isGeneratingSkills = true;
+    state.flashTone = "";
+    state.flash = `正在为 ${missing.map((item) => item.company).join("、")} 生成匹配 Skill…`;
+    render();
+    try {
+      const generated = [];
+      for (let index = 0; index < missing.length; index += 10) {
+        const batch = missing.slice(index, index + 10);
+        const response = await fetch(`${AGENT_ENDPOINT}/skills/generate`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ companies: batch }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || `agent returned ${response.status}`);
+        const batchSkills = SanyStore.normalizeSkills(payload.skills || []);
+        if (batchSkills.length !== batch.length) throw new Error("部分公司未能生成有效 Skill");
+        generated.push(...batchSkills);
+      }
+      if (generated.length !== missing.length) throw new Error("部分公司未能生成有效 Skill");
+      const byCompany = new Map(state.companySkills.map((skill) => [SanyStore.normalizeCompany(skill.company), skill]));
+      generated.forEach((skill) => byCompany.set(SanyStore.normalizeCompany(skill.company), skill));
+      state.companySkills = await SanyStore.saveCompanySkills([...byCompany.values()]);
+      return { generated: generated.length };
+    } finally {
+      state.isGeneratingSkills = false;
+    }
   }
 
   async function runMatch() {
@@ -1135,6 +1183,13 @@
     }
     if (!state.candidate.profile?.experience?.length) await readFullCandidateProfile();
     else state.networkNotice = `复用已读取的 ${state.candidate.profile.experience.length} 段工作经历，正在进行岗位分析。`;
+    try {
+      await ensureCompanySkillsForRoles(state.hcs);
+    } catch (error) {
+      state.networkNotice = `公司匹配 Skill 生成失败：${error.message || "Agent 暂时不可用"}。`;
+      render();
+      return;
+    }
     await generateMatchReport();
   }
 
@@ -1148,7 +1203,7 @@
       const response = await fetch(`${AGENT_ENDPOINT}/match`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ candidate: state.candidate, roles: shortlistedRoles }),
+        body: JSON.stringify({ candidate: state.candidate, roles: shortlistedRoles, skills: state.companySkills }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || `agent returned ${response.status}`);
@@ -1251,7 +1306,19 @@
       const draft = SanyStore.normalizeRole(payload.role || {}, index);
       state.hcs = await SanyStore.saveHcs([...state.hcs, draft]);
       state.modal = null;
-      state.flash = `已新增岗位：${draft.title}`;
+      if (!draft.company) {
+        state.flashTone = "error";
+        state.flash = `已新增岗位：${draft.title}。1 个 HC 未填写公司，请补充后再匹配。`;
+      } else {
+        try {
+          await ensureCompanySkillsForRoles(state.hcs);
+          state.flashTone = "";
+          state.flash = `已新增岗位：${draft.title}；${draft.company} 匹配 Skill 已就绪。`;
+        } catch (error) {
+          state.flashTone = "error";
+          state.flash = `岗位已保存，但 ${draft.company} 匹配 Skill 生成失败：${error.message || "Agent 暂时不可用"}。`;
+        }
+      }
     } catch (error) {
       state.modal = { type: "edit", role: null, draft: text, error: `解析失败：${error.message || "Agent 暂时不可用"}` };
     } finally {
@@ -1299,12 +1366,20 @@
     } finally {
       state.isUploadingCv = false;
     }
-    if (state.candidate?.source === "cv" && state.candidate.canMatch) await generateMatchReport();
-    else render();
+    if (state.candidate?.source === "cv" && state.candidate.canMatch) {
+      try {
+        await ensureCompanySkillsForRoles(state.hcs);
+        await generateMatchReport();
+      } catch (error) {
+        state.networkNotice = `公司匹配 Skill 生成失败：${error.message || "Agent 暂时不可用"}。`;
+        render();
+      }
+    } else render();
   }
 
   async function handleImport(file) {
     if (!file) return;
+    state.flashTone = "";
     state.flash = "正在读取 Excel，Peanut 将自动识别表格结构…";
     render();
     try {
@@ -1320,8 +1395,25 @@
       const importedCount = Array.isArray(payload.roles) ? payload.roles.length : 0;
       const hcs = await SanyStore.mergeImportedRows(payload.roles || []);
       state.hcs = hcs;
-      state.flash = `Peanut 已处理 ${importedCount} 个岗位；新增 ${Math.max(0, hcs.length - beforeCount)} 个，HC 库现有 ${hcs.length} 个。原有岗位已保留。`;
+      const missingCompanyCount = hcs.filter((role) => !String(role?.company || "").trim()).length;
+      let skillError = null;
+      try {
+        await ensureCompanySkillsForRoles(hcs);
+      } catch (error) {
+        skillError = error;
+      }
+      if (missingCompanyCount) {
+        state.flashTone = "error";
+        state.flash = `Peanut 已处理 ${importedCount} 个岗位；${missingCompanyCount} 个 HC 未填写公司，请补充后再匹配。${skillError ? ` 其他公司的 Skill 生成失败：${skillError.message || "Agent 暂时不可用"}。` : " 已填写公司的岗位可正常匹配。"}`;
+      } else if (skillError) {
+        state.flashTone = "error";
+        state.flash = `HC 已导入并保留原有岗位，但公司匹配 Skill 生成失败：${skillError.message || "Agent 暂时不可用"}。`;
+      } else {
+        state.flashTone = "";
+        state.flash = `Peanut 已处理 ${importedCount} 个岗位；新增 ${Math.max(0, hcs.length - beforeCount)} 个，原有岗位已保留，公司匹配 Skill 已就绪。`;
+      }
     } catch (error) {
+      state.flashTone = "error";
       state.flash = error?.message || "导入失败，请检查 XLSX 格式。";
     }
     render();
@@ -1449,7 +1541,19 @@
     const hcs = form.dataset.roleId ? state.hcs.map((role) => role.id === form.dataset.roleId ? draft : role) : [...state.hcs, draft];
     state.hcs = await SanyStore.saveHcs(hcs);
     state.modal = null;
-    state.flash = form.dataset.roleId ? "岗位已更新。" : "岗位已新增。";
+    if (!draft.company) {
+      state.flashTone = "error";
+      state.flash = `${form.dataset.roleId ? "岗位已更新" : "岗位已新增"}，但 Company 未填写；该 HC 不会参与匹配。`;
+    } else {
+      try {
+        await ensureCompanySkillsForRoles(state.hcs);
+        state.flashTone = "";
+        state.flash = `${form.dataset.roleId ? "岗位已更新" : "岗位已新增"}；${draft.company} 匹配 Skill 已就绪。`;
+      } catch (error) {
+        state.flashTone = "error";
+        state.flash = `岗位已保存，但 ${draft.company} 匹配 Skill 生成失败：${error.message || "Agent 暂时不可用"}。`;
+      }
+    }
     render();
   });
 

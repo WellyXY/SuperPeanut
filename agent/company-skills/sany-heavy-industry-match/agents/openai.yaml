@@ -1,0 +1,4 @@
+interface:
+  display_name: "三一重工候选人匹配"
+  short_description: "依据三一重工完整HC与招聘规则评估候选人岗位匹配度"
+  default_prompt: "Use $sany-heavy-industry-match to evaluate this candidate against the relevant 三一重工 HC."

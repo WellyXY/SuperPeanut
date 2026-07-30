@@ -15,4 +15,5 @@ button:active, .import-label:active { transform: translateY(1px) scale(.99); }
 .import-label { margin-top: 8px; border: 1px solid rgba(186, 218, 215, .17); color: #cae0dc; background: transparent; }
 .import-label:hover { background: rgba(255,255,255,.05); }
 .message { min-height: 32px; margin: 11px 0 0; color: #9fc7c0; font-size: 11px; line-height: 1.45; }
+.message.is-error { color: #ffaaa0; }
 .footnote { margin: 12px 0 0; padding-top: 11px; border-top: 1px solid rgba(186, 218, 215, .12); color: #72898a; font-size: 10px; line-height: 1.5; }
