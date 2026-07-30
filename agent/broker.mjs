@@ -102,6 +102,47 @@ function missingCompanyMessage(roles) {
   return `无法导入：${missing.length} 个 HC 没有公司名称（${titles.join("、")}${suffix}）。请在原始内容中明确填写 Company 后重新导入。`;
 }
 
+function normalizedHeader(value) {
+  return String(value || "").trim().toLowerCase().replace(/[\s_\-/]+/g, "");
+}
+
+function inheritGroupedFields(sheets) {
+  const companyHeaders = new Set(["公司", "公司名称", "company", "companyname", "雇主", "employer"]);
+  const productHeaders = new Set(["产品", "产品线", "事业部", "事业部产品线", "businessunit", "product", "productline"]);
+  const titleHeaders = new Set(["岗位", "岗位名称", "职位", "职位名称", "jobtitle", "title", "role"]);
+  const dateHeaders = new Set(["开放日期", "发布日期", "发布日", "更新日期", "releasedate", "updatedat", "date"]);
+  return sheets.map((sheet) => {
+    const rows = sheet.rows.map((row) => [...row]);
+    const headerIndex = rows.slice(0, 40).findIndex((row) => row.some((cell) => companyHeaders.has(normalizedHeader(cell))));
+    if (headerIndex < 0) return { ...sheet, rows };
+    const headers = rows[headerIndex].map(normalizedHeader);
+    const groupedColumns = [companyHeaders, productHeaders].map((names) => headers.findIndex((header) => names.has(header))).filter((column) => column >= 0);
+    const titleColumn = headers.findIndex((header) => titleHeaders.has(header));
+    const dateColumn = headers.findIndex((header) => dateHeaders.has(header));
+    if (!groupedColumns.length || titleColumn < 0) return { ...sheet, rows };
+    const activeValues = new Map(groupedColumns.map((column) => [column, ""]));
+    for (let index = headerIndex + 1; index < rows.length; index += 1) {
+      const row = rows[index];
+      const hasValues = row.some((cell) => String(cell || "").trim());
+      if (!hasValues) {
+        groupedColumns.forEach((column) => activeValues.set(column, ""));
+        continue;
+      }
+      const title = String(row[titleColumn] || "").trim();
+      if (dateColumn >= 0 && /^\d{5}(?:\.\d+)?$/.test(String(row[dateColumn] || "").trim())) {
+        const serial = Number(row[dateColumn]);
+        row[dateColumn] = new Date(Date.UTC(1899, 11, 30) + Math.floor(serial) * 86400000).toISOString().slice(0, 10);
+      }
+      for (const column of groupedColumns) {
+        const value = String(row[column] || "").trim();
+        if (value) activeValues.set(column, value);
+        else if (activeValues.get(column) && title) row[column] = activeValues.get(column);
+      }
+    }
+    return { ...sheet, rows };
+  });
+}
+
 const META_OUTPUT = /(?:不需要提及|该事实应|没有必要在这里|只需保留|这样就可以|不要提及|这个事实足够|到此为止|最终使用|实际输出|需纠正为)/;
 
 function cleanAgentText(value, sentenceLimit = 2) {
@@ -247,12 +288,13 @@ ${JSON.stringify(customGroups)}`;
       }
     }
     if (request.url === "/roles/import") {
-      const sheets = (Array.isArray(input?.sheets) ? input.sheets : []).slice(0, 20).map((sheet, sheetIndex) => ({
+      const rawSheets = (Array.isArray(input?.sheets) ? input.sheets : []).slice(0, 20).map((sheet, sheetIndex) => ({
         name: String(sheet?.name || `Sheet ${sheetIndex + 1}`).slice(0, 120),
         rows: (Array.isArray(sheet?.rows) ? sheet.rows : []).slice(0, 600).map((row) =>
           (Array.isArray(row) ? row : []).slice(0, 60).map((cell) => String(cell ?? "").slice(0, 6000))
         ),
       })).filter((sheet) => sheet.rows.some((row) => row.some((cell) => cell.trim())));
+      const sheets = inheritGroupedFields(rawSheets);
       if (!sheets.length) throw new Error("Excel 中没有可读取的工作表内容");
       const temp = await mkdtemp(join(tmpdir(), "sany-roles-import-"));
       try {
@@ -260,7 +302,7 @@ ${JSON.stringify(customGroups)}`;
         const today = new Date().toISOString().slice(0, 10);
         const prompt = `You are a recruiting operations import agent. Convert the COMPLETE raw Excel workbook below into standardized HC records using the supplied JSON schema. The workbook format is arbitrary: the header may not be the first row, columns may use any language or names, JD text may span multiple columns, and relevant rows may appear across multiple sheets. Identify actual job rows and ignore title banners, blank rows, totals, instructions, legends, and decorative content. Preserve the source row order across sheets.
 
-Use only explicit source facts; never invent missing data. company is the explicitly named hiring company/employer, not a candidate's past employer, brand example, customer, product, recruiter, or hiring manager; use "" when absent. title must be the actual job title and rows without a discernible job title must be skipped. location must preserve all explicit country/city/base details; use "未填写地点" only when absent. businessUnit is the product line or business unit; use "不限产品" when absent. function is the job function such as Sales & Marketing, Technical, Service, HR, Finance, or General. region may be inferred only from an explicit country, otherwise "全球". priority must be SSS, SS, or S; normalize equivalent labels and use S when absent. openCount uses the explicit HC/headcount, otherwise 1. nationality and hiringManager are "" when absent. updatedAt uses the explicit release/update date as YYYY-MM-DD; Excel serial dates should be converted when clearly dates; use ${today} when absent. note must combine and retain ALL material unassigned source cells for the job, including full JD, responsibilities, requirements, location remarks, language, experience, compensation, restrictions, and free-form comments. Remove only duplicated formatting noise. Do not merge different jobs. Return JSON only through the schema.
+Use only explicit source facts; never invent missing data. The workbook has already expanded company and product-line values that were explicitly written once for a contiguous vertical job group; treat those carried-forward cells as source facts. company is the explicitly named hiring company/employer, not a candidate's past employer, brand example, customer, product, recruiter, or hiring manager; use "" when absent. title must be the actual job title and rows without a discernible job title must be skipped. location must preserve the explicit Base city or city list. For Mainland China, when one or more cities are explicit, return only those cities and do not append "中国大陆" (for example "深圳，中国大陆" becomes "深圳"); retain "中国大陆" only when no city is given. use "未填写地点" only when absent. businessUnit is the product line or business unit; use "不限产品" when absent. function is the job function such as Sales & Marketing, Technical, Service, HR, Finance, or General. region may be inferred only from an explicit country, otherwise "全球". priority must be SSS, SS, or S; normalize equivalent labels and use S when absent. openCount uses the explicit HC/headcount, otherwise 1. nationality and hiringManager are "" when absent. updatedAt uses the explicit release/update date as YYYY-MM-DD; Excel serial dates should be converted when clearly dates; use ${today} when absent. note must combine and retain ALL material unassigned source cells for the job, including full JD, responsibilities, requirements, location remarks, language, experience, compensation, restrictions, and free-form comments. Remove only duplicated formatting noise. Do not merge different jobs. Return JSON only through the schema.
 
 Workbook:
 ${JSON.stringify(sheets)}`;
@@ -281,7 +323,7 @@ ${JSON.stringify(sheets)}`;
       try {
         const output = join(temp, "role.json");
         const today = new Date().toISOString().slice(0, 10);
-        const prompt = `You are a recruiting operations data-entry agent. Convert the pasted raw job requirement into exactly one structured HC record using the supplied JSON schema. Use only facts in the source; do not invent requirements. Write human-readable fields in Simplified Chinese while preserving proper nouns. title is the job title. company is the explicitly named hiring company or employer; use an empty string when absent and never infer it from a brand, product, recruiter, or candidate company. location must preserve every explicit country/city/base location. businessUnit is the stated product line or business unit; use "不限产品" only when absent. function is the job function such as Sales & Marketing, Technical, Service, HR, Finance, or General. region is the explicit region, or infer only from an explicitly stated country; otherwise use "全球". priority must be SSS, SS, or S; if absent use S. openCount must use the explicit HC count, otherwise 1. nationality and hiringManager must be empty strings when absent. updatedAt is the explicit release/update date normalized as YYYY-MM-DD; if absent use today's date ${today}. note must retain ALL material source content and requirements, including location details, product scope, experience, language, customer, compensation, restrictions, and free-form remarks. Clean formatting and duplicates but do not shorten away details. Return JSON only through the schema.\n\nRaw job requirement:\n${jobText.slice(0, 80000)}`;
+        const prompt = `You are a recruiting operations data-entry agent. Convert the pasted raw job requirement into exactly one structured HC record using the supplied JSON schema. Use only facts in the source; do not invent requirements. Write human-readable fields in Simplified Chinese while preserving proper nouns. title is the job title. company is the explicitly named hiring company or employer; use an empty string when absent and never infer it from a brand, product, recruiter, or candidate company. location must preserve the explicit Base city or city list. For Mainland China, when a city is explicit, return the city without appending "中国大陆"; retain "中国大陆" only when no city is given. businessUnit is the stated product line or business unit; use "不限产品" only when absent. function is the job function such as Sales & Marketing, Technical, Service, HR, Finance, or General. region is the explicit region, or infer only from an explicitly stated country; otherwise use "全球". priority must be SSS, SS, or S; if absent use S. openCount must use the explicit HC count, otherwise 1. nationality and hiringManager must be empty strings when absent. updatedAt is the explicit release/update date normalized as YYYY-MM-DD; if absent use today's date ${today}. note must retain ALL material source content and requirements, including location details, product scope, experience, language, customer, compensation, restrictions, and free-form remarks. Clean formatting and duplicates but do not shorten away details. Return JSON only through the schema.\n\nRaw job requirement:\n${jobText.slice(0, 80000)}`;
         await runCodex(prompt, output, ROLE_SCHEMA, "low");
         const result = JSON.parse(await readFile(output, "utf8"));
         const companyError = missingCompanyMessage([result.role]);
