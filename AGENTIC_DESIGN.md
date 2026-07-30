@@ -30,7 +30,7 @@ Raw page sections become a canonical candidate record. The system confirms ident
 
 ### Company Skill generation
 
-Company is required for matching. An import may preserve a missing-company HC for correction, but it is excluded until Company is filled. The first HC save for a new company generates one persistent company Skill from that company's complete HC/JD source. Its first section is a factual company introduction, followed by hard gates, soft assessment, role positioning, recommendation, report contract, and evidence discipline. Missing company policy is omitted rather than invented. 三一重工 uses the maintained SANY Skill whose requirements match the previous SANY Match Agent.
+Company is required for import and matching. A single pasted or manually entered HC without Company is rejected before persistence. If any parsed Excel row lacks Company, the entire batch is rejected atomically and the existing HC store remains unchanged. The first HC save for a new company generates one persistent company Skill from that company's complete HC/JD source. Its first section is a factual company introduction, followed by hard gates, soft assessment, role positioning, recommendation, report contract, and evidence discipline. Missing company policy is omitted rather than invented. 三一重工 uses the maintained SANY Skill whose requirements match the previous SANY Match Agent.
 
 ### Company Skill router
 

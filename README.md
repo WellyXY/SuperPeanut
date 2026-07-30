@@ -37,7 +37,7 @@ SuperPeanut 是一个侧载式 Chrome Extension，用于在 LinkedIn 候选人�
 - 直接粘贴一整段岗位需求，由 Peanut 自动整理为结构化 HC。
 - 查看、编辑、删除及按产品线 Tag 筛选。
 
-Company 是匹配必要条件。未填写公司时岗位仍会保存，但 HC 库显示红色提示且该岗位不会参与匹配。首次保存某家公司时，Peanut 会依据该公司的完整 HC/JD 生成专属匹配 Skill；未明确提供的禁招公司、门槛或政策不会被模型补写。三一重工使用内置的完整 SANY Skill。
+Company 是导入与匹配的必要条件。单条岗位缺少公司时不会保存；Excel 中任意岗位缺少公司时整批拒绝且不写入 HC 库。首次保存某家公司时，Peanut 会依据该公司的完整 HC/JD 生成专属匹配 Skill；未明确提供的禁招公司、门槛或政策不会被模型补写。三一重工使用内置的完整 SANY Skill。
 
 ## Agent Broker
 

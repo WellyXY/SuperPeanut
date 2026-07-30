@@ -1045,7 +1045,7 @@
     if (!isEdit) {
       return `<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true" aria-label="新增岗位"><div class="modal-head"><div><h2>新增岗位</h2><p class="modal-kicker">粘贴原始需求，Peanut 自动整理字段</p></div><button class="icon-button" data-action="close-modal" aria-label="关闭">×</button></div><form class="modal-body" id="role-import-form"><label class="form-label">岗位原始内容<textarea required class="textarea role-paste-textarea" name="jobText" placeholder="直接粘贴完整 JD、聊天记录或岗位备注…" ${state.isParsingRole ? "disabled" : ""}>${escapeHtml(state.modal.draft || "")}</textarea><span class="form-help">Agent 会提取公司、岗位名称、地点、产品线、职能、优先级、HC、负责人及 Release 日期。</span></label>${state.modal.error ? `<p class="notice">${escapeHtml(state.modal.error)}</p>` : ""}<div class="form-actions"><button type="button" class="button ghost" data-action="close-modal" ${state.isParsingRole ? "disabled" : ""}>取消</button><button type="submit" class="button primary" ${state.isParsingRole ? "disabled" : ""}>${state.isParsingRole ? "Peanut 正在整理…" : "Agent 解析并新增"}</button></div></form></section></div>`;
     }
-    return `<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true" aria-label="岗位编辑"><div class="modal-head"><h2>${isEdit ? "编辑岗位" : "新增岗位"}</h2><button class="icon-button" data-action="close-modal" aria-label="关闭">×</button></div><form class="modal-body" id="role-form" data-role-id="${escapeAttribute(role?.id || "")}"><div class="form-grid"><label class="form-label">公司<input class="input" name="company" value="${value("company")}" placeholder="未提供可留空"></label><label class="form-label">岗位名称<input required class="input" name="title" value="${value("title")}"></label><label class="form-label">国家 / 城市<input required class="input" name="location" value="${value("location")}"></label><label class="form-label">大区<input class="input" name="region" value="${value("region", "全球")}"></label><label class="form-label">优先级<select class="select" name="priority">${["SSS", "SS", "S"].map((item) => `<option ${value("priority", "S") === item ? "selected" : ""}>${item}</option>`).join("")}</select></label><label class="form-label">HC 数量<input required min="0" type="number" class="input" name="openCount" value="${value("openCount", 1)}"></label><label class="form-label">事业部 / 产品线<input class="input" name="businessUnit" value="${value("businessUnit", "不限产品")}"></label><label class="form-label">职能<input class="input" name="function" value="${value("function", "General")}"></label><label class="form-label">国籍要求<input class="input" name="nationality" value="${value("nationality")}"></label><label class="form-label">招聘负责人<input class="input" name="hiringManager" value="${value("hiringManager")}"></label><label class="form-label">JD / 备注<textarea class="textarea" name="note">${escapeHtml(role?.note || "")}</textarea><span class="form-help">可填写必须技能、行业、语言、地点与年资等要求。</span></label></div><div class="form-actions"><button type="button" class="button ghost" data-action="close-modal">取消</button><button type="submit" class="button primary">保存岗位</button></div></form></section></div>`;
+    return `<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true" aria-label="岗位编辑"><div class="modal-head"><h2>${isEdit ? "编辑岗位" : "新增岗位"}</h2><button class="icon-button" data-action="close-modal" aria-label="关闭">×</button></div><form class="modal-body" id="role-form" data-role-id="${escapeAttribute(role?.id || "")}"><div class="form-grid"><label class="form-label">公司<input required class="input" name="company" value="${value("company")}" placeholder="必填，例如：三一重工"></label><label class="form-label">岗位名称<input required class="input" name="title" value="${value("title")}"></label><label class="form-label">国家 / 城市<input required class="input" name="location" value="${value("location")}"></label><label class="form-label">大区<input class="input" name="region" value="${value("region", "全球")}"></label><label class="form-label">优先级<select class="select" name="priority">${["SSS", "SS", "S"].map((item) => `<option ${value("priority", "S") === item ? "selected" : ""}>${item}</option>`).join("")}</select></label><label class="form-label">HC 数量<input required min="0" type="number" class="input" name="openCount" value="${value("openCount", 1)}"></label><label class="form-label">事业部 / 产品线<input class="input" name="businessUnit" value="${value("businessUnit", "不限产品")}"></label><label class="form-label">职能<input class="input" name="function" value="${value("function", "General")}"></label><label class="form-label">国籍要求<input class="input" name="nationality" value="${value("nationality")}"></label><label class="form-label">招聘负责人<input class="input" name="hiringManager" value="${value("hiringManager")}"></label><label class="form-label">JD / 备注<textarea class="textarea" name="note">${escapeHtml(role?.note || "")}</textarea><span class="form-help">可填写必须技能、行业、语言、地点与年资等要求。</span></label></div>${state.modal.error ? `<p class="notice is-error">${escapeHtml(state.modal.error)}</p>` : ""}<div class="form-actions"><button type="button" class="button ghost" data-action="close-modal">取消</button><button type="submit" class="button primary">保存岗位</button></div></form></section></div>`;
   }
 
   function render() {
@@ -1299,6 +1299,7 @@
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || `agent returned ${response.status}`);
+      if (!String(payload.role?.company || "").trim()) throw new Error("没有公司名称，无法导入。请在原始岗位内容中明确填写 Company。");
       const index = state.hcs.length + Date.now();
       const draft = SanyStore.normalizeRole(payload.role || {}, index);
       state.hcs = await SanyStore.saveHcs([...state.hcs, draft]);
@@ -1388,6 +1389,8 @@
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || `agent returned ${response.status}`);
+      const missingCompanies = (payload.roles || []).filter((role) => !String(role?.company || "").trim());
+      if (missingCompanies.length) throw new Error(`无法导入：${missingCompanies.length} 个 HC 没有公司名称。请补充 Company 后重新导入。`);
       const beforeCount = state.hcs.length;
       const importedCount = Array.isArray(payload.roles) ? payload.roles.length : 0;
       const hcs = await SanyStore.mergeImportedRows(payload.roles || []);
@@ -1552,6 +1555,11 @@
     if (form?.id !== "role-form") return;
     event.preventDefault();
     const values = Object.fromEntries(new FormData(form).entries());
+    if (!String(values.company || "").trim()) {
+      state.modal = { ...state.modal, error: "没有公司名称，无法保存岗位。请填写 Company。" };
+      render();
+      return;
+    }
     const index = state.hcs.length + Date.now();
     const draft = SanyStore.normalizeRole({ ...values, id: form.dataset.roleId || undefined, updatedAt: new Date().toISOString().slice(0, 10) }, index);
     const hcs = form.dataset.roleId ? state.hcs.map((role) => role.id === form.dataset.roleId ? draft : role) : [...state.hcs, draft];

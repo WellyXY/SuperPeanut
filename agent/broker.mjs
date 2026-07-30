@@ -94,6 +94,14 @@ function wrapSkill(company, source, roles) {
   };
 }
 
+function missingCompanyMessage(roles) {
+  const missing = (Array.isArray(roles) ? roles : []).filter((role) => !String(role?.company || "").trim());
+  if (!missing.length) return "";
+  const titles = missing.map((role) => String(role?.title || "未命名岗位").trim()).slice(0, 5);
+  const suffix = missing.length > titles.length ? ` 等 ${missing.length} 个岗位` : "";
+  return `无法导入：${missing.length} 个 HC 没有公司名称（${titles.join("、")}${suffix}）。请在原始内容中明确填写 Company 后重新导入。`;
+}
+
 const META_OUTPUT = /(?:不需要提及|该事实应|没有必要在这里|只需保留|这样就可以|不要提及|这个事实足够|到此为止|最终使用|实际输出|需纠正为)/;
 
 function cleanAgentText(value, sentenceLimit = 2) {
@@ -258,7 +266,10 @@ Workbook:
 ${JSON.stringify(sheets)}`;
         await runCodex(prompt, output, ROLES_IMPORT_SCHEMA, "low");
         const result = JSON.parse(await readFile(output, "utf8"));
-        return send(response, 200, { roles: Array.isArray(result.roles) ? result.roles : [] });
+        const roles = Array.isArray(result.roles) ? result.roles : [];
+        const companyError = missingCompanyMessage(roles);
+        if (companyError) return send(response, 422, { error: companyError, code: "COMPANY_REQUIRED" });
+        return send(response, 200, { roles });
       } finally {
         await rm(temp, { recursive: true, force: true });
       }
@@ -273,6 +284,8 @@ ${JSON.stringify(sheets)}`;
         const prompt = `You are a recruiting operations data-entry agent. Convert the pasted raw job requirement into exactly one structured HC record using the supplied JSON schema. Use only facts in the source; do not invent requirements. Write human-readable fields in Simplified Chinese while preserving proper nouns. title is the job title. company is the explicitly named hiring company or employer; use an empty string when absent and never infer it from a brand, product, recruiter, or candidate company. location must preserve every explicit country/city/base location. businessUnit is the stated product line or business unit; use "不限产品" only when absent. function is the job function such as Sales & Marketing, Technical, Service, HR, Finance, or General. region is the explicit region, or infer only from an explicitly stated country; otherwise use "全球". priority must be SSS, SS, or S; if absent use S. openCount must use the explicit HC count, otherwise 1. nationality and hiringManager must be empty strings when absent. updatedAt is the explicit release/update date normalized as YYYY-MM-DD; if absent use today's date ${today}. note must retain ALL material source content and requirements, including location details, product scope, experience, language, customer, compensation, restrictions, and free-form remarks. Clean formatting and duplicates but do not shorten away details. Return JSON only through the schema.\n\nRaw job requirement:\n${jobText.slice(0, 80000)}`;
         await runCodex(prompt, output, ROLE_SCHEMA, "low");
         const result = JSON.parse(await readFile(output, "utf8"));
+        const companyError = missingCompanyMessage([result.role]);
+        if (companyError) return send(response, 422, { error: companyError, code: "COMPANY_REQUIRED" });
         return send(response, 200, result);
       } finally {
         await rm(temp, { recursive: true, force: true });

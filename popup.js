@@ -73,6 +73,8 @@ document.querySelector("#import-file").addEventListener("change", async (event) 
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || `agent returned ${response.status}`);
+    const missingCompanies = (payload.roles || []).filter((role) => !String(role?.company || "").trim());
+    if (missingCompanies.length) throw new Error(`无法导入：${missingCompanies.length} 个 HC 没有公司名称。请补充 Company 后重新导入。`);
     const previous = await SanyStore.getHcs();
     const importedCount = Array.isArray(payload.roles) ? payload.roles.length : 0;
     const hcs = await SanyStore.mergeImportedRows(payload.roles || []);

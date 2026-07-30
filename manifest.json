@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SuperPeanut",
-  "version": "1.3.3",
+  "version": "1.3.4",
   "description": "多公司 Skill 路由版：按公司背景与完整 HC/JD 生成并调用专属匹配 Skill。",
   "permissions": ["storage", "tabs"],
   "host_permissions": ["https://www.linkedin.com/*", "https://sany-agent-temp.racoonn.me/*", "https://superpeanut-storage-production.up.railway.app/*"],
