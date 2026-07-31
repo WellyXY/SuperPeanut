@@ -1033,6 +1033,41 @@
     }
   }
 
+  function typePageTranslations(items) {
+    if (!items.length) return Promise.resolve();
+    const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+    if (reducedMotion) {
+      items.forEach((item) => { if (item.node.isConnected) item.node.nodeValue = item.finalText; });
+      return Promise.resolve();
+    }
+    const longest = Math.max(...items.map((item) => item.characters.length));
+    const duration = Math.min(850, Math.max(260, 180 + longest * 14));
+    const startedAt = performance.now();
+    items.forEach((item) => {
+      if (item.node.isConnected) item.node.nodeValue = `${item.leading}${item.characters[0] || ""}${item.trailing}`;
+    });
+    return new Promise((resolve) => {
+      const tick = () => {
+        const progress = Math.min(1, (performance.now() - startedAt) / duration);
+        // Ease out so the translated sentence becomes readable quickly while the
+        // final characters still retain a visible typewriter cadence.
+        const eased = 1 - Math.pow(1 - progress, 2);
+        for (const item of items) {
+          if (!item.node.isConnected) continue;
+          const count = Math.max(1, Math.ceil(item.characters.length * eased));
+          item.node.nodeValue = `${item.leading}${item.characters.slice(0, count).join("")}${item.trailing}`;
+        }
+        if (progress >= 1) {
+          items.forEach((item) => { if (item.node.isConnected) item.node.nodeValue = item.finalText; });
+          resolve();
+          return;
+        }
+        window.setTimeout(tick, 28);
+      };
+      window.setTimeout(tick, 28);
+    });
+  }
+
   async function translatePageToChinese() {
     if (state.isTranslatingPage) return;
     if (state.pageTranslationRecords.length) { restorePageTranslation(); return; }
@@ -1053,8 +1088,10 @@
       let nextBatch = 0;
       let completed = 0;
       const errors = [];
+      const animations = [];
       const translateBatch = async (batch) => {
         const translated = await requestPageTranslation(batch);
+        const typewriterItems = [];
         batch.forEach((group, index) => {
           const replacement = translated.get(index);
           if (!replacement || replacement === group.text) return;
@@ -1064,7 +1101,7 @@
             const leading = original.match(/^\s*/)?.[0] || "";
             const trailing = original.match(/\s*$/)?.[0] || "";
             const next = `${leading}${replacement}${trailing}`;
-            node.nodeValue = next;
+            typewriterItems.push({ node, leading, trailing, characters: [...replacement], finalText: next });
             records.push({ kind: "text", node, original, translated: next });
           }
           for (const target of group.attributes) {
@@ -1075,6 +1112,7 @@
             records.push({ kind: "attribute", element: target.element, name: target.name, original, translated: replacement });
           }
         });
+        animations.push(typePageTranslations(typewriterItems));
         completed += batch.length;
         state.pageTranslationRecords = records;
         state.pageTranslationProgress = `${Math.min(completed, groups.length)}/${groups.length}`;
@@ -1104,6 +1142,7 @@
         }
       };
       await Promise.all(Array.from({ length: Math.min(TRANSLATION_CONCURRENCY, batches.length) }, () => worker()));
+      await Promise.all(animations);
       state.pageTranslationRecords = records;
       if (errors.length) throw errors[0];
     } catch (error) {
