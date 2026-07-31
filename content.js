@@ -4,8 +4,8 @@
   const EXTENSION_VERSION = chrome.runtime.getManifest().version;
   const HC_SORT_KEY = "superpeanut_hc_sort";
   const PET_POSITION_KEY = "superpeanut_pet_position";
-  const TRANSLATION_BATCH_SIZE = 60;
-  const TRANSLATION_CONCURRENCY = 10;
+  const TRANSLATION_BATCH_SIZE = 35;
+  const TRANSLATION_CONCURRENCY = 20;
   const PEANUT_SPRITESHEET = chrome.runtime.getURL("assets/peanut-spritesheet.webp");
   const MOCHI_RUNNING = chrome.runtime.getURL("assets/mochi-running.webp");
   const MOCHI_IDLE = chrome.runtime.getURL("assets/mochi-idle.webp");
@@ -1068,17 +1068,56 @@
     });
   }
 
+  async function preloadPageForTranslation() {
+    const scroller = profileScrollContainer();
+    const originalTop = scrollMetrics(scroller).top;
+    try {
+      scrollToProfilePosition(scroller, 0);
+      state.pageTranslationProgress = "扫描页面 0%";
+      render();
+      await pause(180);
+      for (let iteration = 0; iteration < 32; iteration += 1) {
+        const metrics = scrollMetrics(scroller);
+        const bottom = Math.max(0, metrics.height - metrics.viewport);
+        const next = Math.min(bottom, metrics.top + Math.max(720, Math.floor(metrics.viewport * 0.92)));
+        const percent = bottom > 0 ? Math.min(100, Math.round((next / bottom) * 100)) : 100;
+        state.pageTranslationProgress = `扫描页面 ${percent}%`;
+        if (iteration % 3 === 0 || percent === 100) render();
+        if (next <= metrics.top + 4) break;
+        scrollToProfilePosition(scroller, next);
+        await pause(130);
+      }
+      await pause(220);
+    } finally {
+      scrollToProfilePosition(scroller, originalTop);
+      await pause(100);
+    }
+  }
+
   async function translatePageToChinese() {
     if (state.isTranslatingPage) return;
     if (state.pageTranslationRecords.length) { restorePageTranslation(); return; }
-    const groups = translatablePageText();
-    if (!groups.length) {
-      state.pageTranslationError = "当前页面没有需要翻译的可见文字";
+    state.isTranslatingPage = true;
+    state.pageTranslationError = "";
+    state.pageTranslationProgress = "扫描页面";
+    render();
+    try {
+      await preloadPageForTranslation();
+    } catch (error) {
+      state.isTranslatingPage = false;
+      state.pageTranslationProgress = "";
+      state.pageTranslationError = `页面扫描失败：${error?.message || "无法读取页面"}`;
       render();
       return;
     }
-    state.isTranslatingPage = true;
-    state.pageTranslationError = "";
+    const groups = translatablePageText();
+    if (!groups.length) {
+      state.pageTranslationError = "当前页面没有需要翻译的可见文字";
+      state.isTranslatingPage = false;
+      state.pageTranslationProgress = "";
+      render();
+      return;
+    }
     state.pageTranslationProgress = `0/${groups.length}`;
     const records = [];
     render();
