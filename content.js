@@ -66,14 +66,9 @@
     petDrag: null,
     suppressPetClickUntil: 0,
     isTranslatingPage: false,
-    pageTranslationEnabled: false,
     pageTranslationProgress: "",
     pageTranslationRecords: [],
     pageTranslationError: "",
-    pageTranslationSources: new Map(),
-    pageTranslationObserver: null,
-    pageTranslationMutationTimer: null,
-    pageTranslationRerun: false,
   };
 
   const escapeHtml = (value) => String(value ?? "")
@@ -967,149 +962,50 @@
     return `<section class="panel-auth"><div class="panel-auth-intro"><div class="panel-auth-mark">P</div><h2>登录你的工作区</h2><p>登录后同步你的 HC、候选人和 Peanut 对话。</p></div><form id="panel-login-form" class="panel-auth-form"><label>账号<input class="input" name="username" autocomplete="username" required></label><label>密码<input class="input" name="password" type="password" autocomplete="current-password" required></label>${state.authError ? `<p class="panel-auth-error">${escapeHtml(state.authError)}</p>` : ""}<button class="button primary" type="submit" ${state.isAuthenticating ? "disabled" : ""}>${state.isAuthenticating ? "正在登录…" : "登录"}</button><button class="panel-auth-switch" type="button" data-action="auth-register">没有账号？建立新账号</button></form></section>`;
   }
 
-  function sourceTextForTranslation(element) {
-    const pieces = [];
-    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
-    while (walker.nextNode()) {
-      const node = walker.currentNode;
-      if (node.parentElement?.closest("[data-superpeanut-translation]")) continue;
-      const text = String(node.nodeValue || "").replace(/\s+/g, " ").trim();
-      if (text) pieces.push(text);
-    }
-    return pieces.join(" ").replace(/\s+/g, " ").trim();
-  }
-
-  function isTranslatableText(text) {
-    return text.length >= 2
-      && text.length <= 6000
-      && /[A-Za-zÀ-ž]/u.test(text)
-      && !/^(?:https?:\/\/|www\.|@)[^\s]+$/i.test(text);
-  }
-
-  function isVisibleTranslationElement(element) {
-    if (!element?.isConnected || root.contains(element) || element.closest("[data-superpeanut-translation]")) return false;
-    if (element.closest("script,style,noscript,textarea,input,select,option,[contenteditable='true'],svg,canvas")) return false;
-    const style = window.getComputedStyle(element);
-    return style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity) !== 0 && element.getClientRects().length > 0;
-  }
-
   function translatablePageText() {
     const grouped = new Map();
-    const selected = new Set();
-    const addElement = (element) => {
-      if (!isVisibleTranslationElement(element) || element.hasAttribute("data-superpeanut-translation-source")) return false;
-      const text = sourceTextForTranslation(element);
-      if (!isTranslatableText(text)) return false;
-      if (!grouped.has(text)) grouped.set(text, { elements: [] });
-      grouped.get(text).elements.push(element);
-      selected.add(element);
-      return true;
+    const addGroup = (text, target, kind) => {
+      if (!grouped.has(text)) grouped.set(text, { nodes: [], attributes: [] });
+      if (kind === "text") grouped.get(text).nodes.push(target);
+      else grouped.get(text).attributes.push(target);
     };
-
-    // Prefer complete semantic paragraphs so the translation keeps context.
-    const semanticSelector = "p,li,h1,h2,h3,h4,h5,h6,blockquote,figcaption,td,th,[role='heading']";
-    const semantic = [...document.body.querySelectorAll(semanticSelector)];
-    for (const element of semantic) {
-      const hasNestedParagraph = [...element.querySelectorAll(semanticSelector)]
-        .some((child) => isVisibleTranslationElement(child) && isTranslatableText(sourceTextForTranslation(child)));
-      if (!hasNestedParagraph) addElement(element);
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      const parent = node.parentElement;
+      if (!parent || root.contains(parent) || parent.closest("script,style,noscript,textarea,input,select,option,[contenteditable='true']")) continue;
+      const style = window.getComputedStyle(parent);
+      if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0) continue;
+      const source = String(node.nodeValue || "");
+      const text = source.replace(/\s+/g, " ").trim();
+      if (text.length < 2 || text.length > 6000 || !/[A-Za-zÀ-ž]/u.test(text) || /^(?:https?:\/\/|www\.|@)[^\s]+$/i.test(text)) continue;
+      addGroup(text, node, "text");
     }
-
-    // LinkedIn relies heavily on nested div/span containers. Select only the
-    // deepest readable fallback block outside an already selected paragraph.
-    const fallback = [...document.body.querySelectorAll("main span,main div,main a,article span,article div,article a")];
-    for (const element of fallback) {
-      let ancestor = element.parentElement;
-      let coveredByParagraph = false;
-      while (ancestor) {
-        if (selected.has(ancestor)) { coveredByParagraph = true; break; }
-        ancestor = ancestor.parentElement;
+    for (const element of document.body.querySelectorAll("[placeholder],[title],[aria-label],input[type='button'][value],input[type='submit'][value]")) {
+      if (root.contains(element)) continue;
+      const style = window.getComputedStyle(element);
+      if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0) continue;
+      for (const name of ["placeholder", "title", "aria-label", "value"]) {
+        if (!element.hasAttribute(name)) continue;
+        const text = String(element.getAttribute(name) || "").replace(/\s+/g, " ").trim();
+        if (text.length < 2 || text.length > 6000 || !/[A-Za-zÀ-ž]/u.test(text) || /^(?:https?:\/\/|www\.|@)[^\s]+$/i.test(text)) continue;
+        addGroup(text, { element, name }, "attribute");
       }
-      if (coveredByParagraph) continue;
-      const childHasText = [...element.children].some((child) => isVisibleTranslationElement(child) && isTranslatableText(sourceTextForTranslation(child)));
-      if (!childHasText) addElement(element);
     }
     return [...grouped.entries()].map(([text, targets]) => ({ text, ...targets }));
   }
 
-  function ensureImmersiveTranslationStyle() {
-    if (document.getElementById("superpeanut-immersive-translation-style")) return;
-    const style = document.createElement("style");
-    style.id = "superpeanut-immersive-translation-style";
-    style.textContent = `
-      [data-superpeanut-translation] {
-        display:block !important;
-        box-sizing:border-box !important;
-        width:100% !important;
-        margin:.38em 0 .12em !important;
-        padding:.08em 0 .08em .72em !important;
-        border-left:2px solid #8fbe69 !important;
-        color:#5f9862 !important;
-        background:transparent !important;
-        font:500 .92em/1.62 ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif !important;
-        letter-spacing:0 !important;
-        white-space:normal !important;
-        text-align:left !important;
-        text-decoration:none !important;
-        text-transform:none !important;
-        opacity:.98 !important;
-      }
-      @media (prefers-color-scheme: dark) {
-        [data-superpeanut-translation] { color:#8fcf91 !important; border-left-color:#75ad68 !important; }
-      }
-    `;
-    (document.head || document.documentElement).append(style);
-  }
-
-  function removeTranslationRecord(record) {
-    record.translationElement?.remove();
-    record.sourceElement?.removeAttribute("data-superpeanut-translation-source");
-    if (record.sourceElement) state.pageTranslationSources.delete(record.sourceElement);
-  }
-
-  function scheduleDynamicPageTranslation() {
-    if (!state.pageTranslationEnabled) return;
-    window.clearTimeout(state.pageTranslationMutationTimer);
-    state.pageTranslationMutationTimer = window.setTimeout(() => runPageTranslationPass(false), 420);
-  }
-
-  function startPageTranslationObserver() {
-    state.pageTranslationObserver?.disconnect();
-    state.pageTranslationObserver = new MutationObserver((mutations) => {
-      let shouldRescan = false;
-      for (const mutation of mutations) {
-        const targetElement = mutation.target.nodeType === Node.TEXT_NODE ? mutation.target.parentElement : mutation.target;
-        if (!targetElement || root.contains(targetElement) || targetElement.closest?.("[data-superpeanut-translation]")) continue;
-        const insertedOnlyByUs = mutation.type === "childList"
-          && mutation.addedNodes.length
-          && [...mutation.addedNodes].every((node) => node.nodeType === Node.ELEMENT_NODE && node.matches?.("[data-superpeanut-translation]"));
-        if (insertedOnlyByUs) continue;
-        const sourceElement = targetElement.closest?.("[data-superpeanut-translation-source]");
-        const record = sourceElement ? state.pageTranslationSources.get(sourceElement) : null;
-        if (record && sourceTextForTranslation(sourceElement) !== record.sourceText) {
-          removeTranslationRecord(record);
-          state.pageTranslationRecords = state.pageTranslationRecords.filter((item) => item !== record);
-        }
-        shouldRescan = true;
-      }
-      if (shouldRescan) scheduleDynamicPageTranslation();
-    });
-    state.pageTranslationObserver.observe(document.body, { childList: true, characterData: true, subtree: true });
-  }
-
   function restorePageTranslation() {
-    state.pageTranslationEnabled = false;
-    state.pageTranslationObserver?.disconnect();
-    state.pageTranslationObserver = null;
-    window.clearTimeout(state.pageTranslationMutationTimer);
-    state.pageTranslationMutationTimer = null;
-    for (const record of state.pageTranslationRecords) removeTranslationRecord(record);
-    state.pageTranslationSources.clear();
+    for (const record of state.pageTranslationRecords) {
+      if (record.kind === "attribute") {
+        if (record.element?.isConnected && record.element.getAttribute(record.name) === record.translated) record.element.setAttribute(record.name, record.original);
+      } else if (record.node?.isConnected && record.node.nodeValue === record.translated) {
+        record.node.nodeValue = record.original;
+      }
+    }
     state.pageTranslationRecords = [];
     state.pageTranslationProgress = "";
     state.pageTranslationError = "";
-    state.pageTranslationRerun = false;
-    document.getElementById("superpeanut-immersive-translation-style")?.remove();
     render();
   }
 
@@ -1172,20 +1068,19 @@
     });
   }
 
-  async function runPageTranslationPass(initial = false) {
-    if (!state.pageTranslationEnabled) return;
-    if (state.isTranslatingPage) {
-      state.pageTranslationRerun = true;
-      return;
-    }
+  async function translatePageToChinese() {
+    if (state.isTranslatingPage) return;
+    if (state.pageTranslationRecords.length) { restorePageTranslation(); return; }
     const groups = translatablePageText();
     if (!groups.length) {
-      if (initial && !state.pageTranslationRecords.length) state.pageTranslationError = "当前页面没有需要翻译的可见段落";
+      state.pageTranslationError = "当前页面没有需要翻译的可见文字";
+      render();
       return;
     }
     state.isTranslatingPage = true;
     state.pageTranslationError = "";
     state.pageTranslationProgress = `0/${groups.length}`;
+    const records = [];
     render();
     try {
       const batches = [];
@@ -1200,24 +1095,26 @@
         batch.forEach((group, index) => {
           const replacement = translated.get(index);
           if (!replacement || replacement === group.text) return;
-          for (const sourceElement of group.elements) {
-            if (!sourceElement.isConnected || sourceElement.hasAttribute("data-superpeanut-translation-source")) continue;
-            const translationElement = document.createElement("span");
-            translationElement.setAttribute("data-superpeanut-translation", "true");
-            translationElement.setAttribute("translate", "no");
-            translationElement.lang = "zh-CN";
-            const translationNode = document.createTextNode("");
-            translationElement.append(translationNode);
-            sourceElement.append(translationElement);
-            sourceElement.setAttribute("data-superpeanut-translation-source", "true");
-            const record = { kind: "injected", sourceElement, translationElement, sourceText: group.text, translated: replacement };
-            state.pageTranslationRecords.push(record);
-            state.pageTranslationSources.set(sourceElement, record);
-            typewriterItems.push({ node: translationNode, leading: "", trailing: "", characters: [...replacement], finalText: replacement });
+          for (const node of group.nodes) {
+            if (!node.isConnected) continue;
+            const original = String(node.nodeValue || "");
+            const leading = original.match(/^\s*/)?.[0] || "";
+            const trailing = original.match(/\s*$/)?.[0] || "";
+            const next = `${leading}${replacement}${trailing}`;
+            typewriterItems.push({ node, leading, trailing, characters: [...replacement], finalText: next });
+            records.push({ kind: "text", node, original, translated: next });
+          }
+          for (const target of group.attributes) {
+            if (!target.element?.isConnected) continue;
+            const original = target.element.getAttribute(target.name);
+            if (original === null) continue;
+            target.element.setAttribute(target.name, replacement);
+            records.push({ kind: "attribute", element: target.element, name: target.name, original, translated: replacement });
           }
         });
         animations.push(typePageTranslations(typewriterItems));
         completed += batch.length;
+        state.pageTranslationRecords = records;
         state.pageTranslationProgress = `${Math.min(completed, groups.length)}/${groups.length}`;
         render();
       };
@@ -1246,33 +1143,14 @@
       };
       await Promise.all(Array.from({ length: Math.min(TRANSLATION_CONCURRENCY, batches.length) }, () => worker()));
       await Promise.all(animations);
+      state.pageTranslationRecords = records;
       if (errors.length) throw errors[0];
     } catch (error) {
+      state.pageTranslationRecords = records;
       state.pageTranslationError = `翻译中断：${error?.message || "服务暂时不可用"}`;
     } finally {
       state.isTranslatingPage = false;
       state.pageTranslationProgress = "";
-      render();
-      if (state.pageTranslationRerun && state.pageTranslationEnabled) {
-        state.pageTranslationRerun = false;
-        scheduleDynamicPageTranslation();
-      }
-    }
-  }
-
-  async function translatePageToChinese() {
-    if (state.isTranslatingPage) return;
-    if (state.pageTranslationEnabled) { restorePageTranslation(); return; }
-    state.pageTranslationEnabled = true;
-    state.pageTranslationError = "";
-    ensureImmersiveTranslationStyle();
-    startPageTranslationObserver();
-    await runPageTranslationPass(true);
-    if (!state.pageTranslationRecords.length && state.pageTranslationError) {
-      state.pageTranslationEnabled = false;
-      state.pageTranslationObserver?.disconnect();
-      state.pageTranslationObserver = null;
-      document.getElementById("superpeanut-immersive-translation-style")?.remove();
       render();
     }
   }
@@ -1387,11 +1265,11 @@
     shadow.querySelector(".app")?.remove();
     const app = document.createElement("div");
     app.className = "app";
-    const translateLabel = state.isTranslatingPage ? `翻译中 ${state.pageTranslationProgress}` : state.pageTranslationEnabled ? "关闭双语翻译" : "Translate · 双语";
+    const translateLabel = state.isTranslatingPage ? `翻译中 ${state.pageTranslationProgress}` : state.pageTranslationRecords.length ? "还原原文" : "Translate · 中文";
     const triggerPets = state.isTranslatingPage
       ? `<span class="trigger-pet-pair is-running" aria-label="Peanut 和 Mochi 正在翻译页面"><span class="trigger-running-peanut" aria-hidden="true" style="--peanut-spritesheet:url('${escapeAttribute(PEANUT_SPRITESHEET)}')"></span><span class="trigger-running-mochi" aria-hidden="true" style="--mochi-spritesheet:url('${escapeAttribute(MOCHI_RUNNING)}')"></span></span>`
       : `<span class="trigger-pet-pair"><span class="trigger-peanut" aria-hidden="true">${PEANUT_IDLE_FRAMES.map((frame) => `<i style="--peanut-idle-frame:url('${escapeAttribute(frame)}')"></i>`).join("")}</span><span class="trigger-mochi" aria-hidden="true" style="--mochi-idle:url('${escapeAttribute(MOCHI_IDLE)}')"></span></span>`;
-    app.innerHTML = `<div class="sany-shell ${state.isOpen ? "is-open" : ""} ${state.isTranslatingPage ? "is-translating" : ""}" style="--pet-x:${pet.x}px;--pet-y:${pet.y}px;--panel-x:${panel.x}px;--panel-y:${panel.y}px"><button class="page-translate ${state.pageTranslationEnabled ? "is-active" : ""}" data-action="translate-page" ${state.isTranslatingPage ? "disabled" : ""}>${escapeHtml(translateLabel)}</button>${state.pageTranslationError ? `<span class="page-translate-error">${escapeHtml(state.pageTranslationError)}</span>` : ""}<button class="sany-trigger" data-action="toggle" aria-label="拖动或打开 SuperPeanut">${triggerPets}<span class="trigger-hint">${state.isTranslatingPage ? "正在翻译页面" : "拖动 · 点击打开"}</span></button><aside class="sany-panel" aria-label="SuperPeanut 面板"><header class="panel-top"><div class="panel-head"><div class="brand"><div class="brand-mark">P</div><div><h1>SuperPeanut</h1><p>${state.account ? `${escapeHtml(state.account.displayName || state.account.username)} · @${escapeHtml(state.account.username)}` : "LinkedIn 招聘匹配工作台"} · v${escapeHtml(EXTENSION_VERSION)}</p></div></div>${state.account ? `<button class="account-logout" data-action="logout-account">退出</button>` : ""}<button class="icon-button" data-action="close" aria-label="收起面板">×</button></div>${state.account ? `<nav class="tabs" aria-label="功能导航"><button class="tab ${state.tab === "match" ? "is-active" : ""}" data-action="tab" data-tab="match">候选人匹配</button><button class="tab ${state.tab === "hcs" ? "is-active" : ""}" data-action="tab" data-tab="hcs">HC 库</button><button class="tab ${state.tab === "history" ? "is-active" : ""}" data-action="tab" data-tab="history">查询记录</button><button class="tab ${state.tab === "agent" ? "is-active" : ""}" data-action="tab" data-tab="agent">Peanut</button></nav>` : ""}</header><main class="panel-body">${body}</main></aside>${state.account ? modalHtml() : ""}</div>`;
+    app.innerHTML = `<div class="sany-shell ${state.isOpen ? "is-open" : ""} ${state.isTranslatingPage ? "is-translating" : ""}" style="--pet-x:${pet.x}px;--pet-y:${pet.y}px;--panel-x:${panel.x}px;--panel-y:${panel.y}px"><button class="page-translate ${state.pageTranslationRecords.length ? "is-active" : ""}" data-action="translate-page" ${state.isTranslatingPage ? "disabled" : ""}>${escapeHtml(translateLabel)}</button>${state.pageTranslationError ? `<span class="page-translate-error">${escapeHtml(state.pageTranslationError)}</span>` : ""}<button class="sany-trigger" data-action="toggle" aria-label="拖动或打开 SuperPeanut">${triggerPets}<span class="trigger-hint">${state.isTranslatingPage ? "正在翻译页面" : "拖动 · 点击打开"}</span></button><aside class="sany-panel" aria-label="SuperPeanut 面板"><header class="panel-top"><div class="panel-head"><div class="brand"><div class="brand-mark">P</div><div><h1>SuperPeanut</h1><p>${state.account ? `${escapeHtml(state.account.displayName || state.account.username)} · @${escapeHtml(state.account.username)}` : "LinkedIn 招聘匹配工作台"} · v${escapeHtml(EXTENSION_VERSION)}</p></div></div>${state.account ? `<button class="account-logout" data-action="logout-account">退出</button>` : ""}<button class="icon-button" data-action="close" aria-label="收起面板">×</button></div>${state.account ? `<nav class="tabs" aria-label="功能导航"><button class="tab ${state.tab === "match" ? "is-active" : ""}" data-action="tab" data-tab="match">候选人匹配</button><button class="tab ${state.tab === "hcs" ? "is-active" : ""}" data-action="tab" data-tab="hcs">HC 库</button><button class="tab ${state.tab === "history" ? "is-active" : ""}" data-action="tab" data-tab="history">查询记录</button><button class="tab ${state.tab === "agent" ? "is-active" : ""}" data-action="tab" data-tab="agent">Peanut</button></nav>` : ""}</header><main class="panel-body">${body}</main></aside>${state.account ? modalHtml() : ""}</div>`;
     shadow.append(app);
     if (state.tab === "agent") scrollAgentToLatest();
   }

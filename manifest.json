@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SuperPeanut",
-  "version": "1.5.0",
+  "version": "1.4.3",
   "description": "账号同步版：登录后独立保存 HC、候选人、匹配记录与 Peanut 对话。",
   "permissions": ["storage", "tabs"],
   "host_permissions": ["https://www.linkedin.com/*", "https://sany-agent-temp.racoonn.me/*", "https://superpeanut-storage-production.up.railway.app/*"],
