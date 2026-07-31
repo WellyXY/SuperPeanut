@@ -5,6 +5,7 @@ SuperPeanut 是一个侧载式 Chrome Extension，用于在 LinkedIn 候选人�
 ## 功能
 
 - LinkedIn 页面常驻 Peanut 与 Mochi 双狗入口
+- 狗狗上方提供 `Translate · 中文`，批量翻译当前页面文字并可一键还原原文
 - 两只狗可整组拖动并记住位置，面板从宠物左侧展开
 - 匹配 Loading 中 Peanut 会与白色卷毛狗 Mochi 一起奔跑
 - 读取候选人当前职位、地点、工作经历与教育背景
@@ -49,6 +50,7 @@ Company 是匹配的必要条件。单条岗位缺少公司时不会保存；Exc
 - `POST /role`
 - `POST /roles/import`
 - `POST /roles/import/jobs` + `GET /roles/import/jobs/:id`（异步 Excel 导入，避免长任务被 Tunnel 超时切断）
+- `POST /translate`（批量把 LinkedIn 页面文字翻译为简体中文）
 - `POST /skills/generate`
 
 本机启动：

@@ -63,6 +63,10 @@
     petPosition: null,
     petDrag: null,
     suppressPetClickUntil: 0,
+    isTranslatingPage: false,
+    pageTranslationProgress: "",
+    pageTranslationRecords: [],
+    pageTranslationError: "",
   };
 
   const escapeHtml = (value) => String(value ?? "")
@@ -956,6 +960,85 @@
     return `<section class="panel-auth"><div class="panel-auth-intro"><div class="panel-auth-mark">P</div><h2>登录你的工作区</h2><p>登录后同步你的 HC、候选人和 Peanut 对话。</p></div><form id="panel-login-form" class="panel-auth-form"><label>账号<input class="input" name="username" autocomplete="username" required></label><label>密码<input class="input" name="password" type="password" autocomplete="current-password" required></label>${state.authError ? `<p class="panel-auth-error">${escapeHtml(state.authError)}</p>` : ""}<button class="button primary" type="submit" ${state.isAuthenticating ? "disabled" : ""}>${state.isAuthenticating ? "正在登录…" : "登录"}</button><button class="panel-auth-switch" type="button" data-action="auth-register">没有账号？建立新账号</button></form></section>`;
   }
 
+  function translatablePageText() {
+    const grouped = new Map();
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      const parent = node.parentElement;
+      if (!parent || root.contains(parent) || parent.closest("script,style,noscript,textarea,input,select,option,[contenteditable='true']")) continue;
+      const style = window.getComputedStyle(parent);
+      if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0) continue;
+      const source = String(node.nodeValue || "");
+      const text = source.replace(/\s+/g, " ").trim();
+      if (text.length < 2 || text.length > 1600 || !/[A-Za-zÀ-ž]/u.test(text) || /^(?:https?:\/\/|www\.|@)[^\s]+$/i.test(text)) continue;
+      if (!grouped.has(text)) grouped.set(text, []);
+      grouped.get(text).push(node);
+    }
+    return [...grouped.entries()].slice(0, 700).map(([text, nodes]) => ({ text, nodes }));
+  }
+
+  function restorePageTranslation() {
+    for (const record of state.pageTranslationRecords) {
+      if (record.node?.isConnected && record.node.nodeValue === record.translated) record.node.nodeValue = record.original;
+    }
+    state.pageTranslationRecords = [];
+    state.pageTranslationProgress = "";
+    state.pageTranslationError = "";
+    render();
+  }
+
+  async function translatePageToChinese() {
+    if (state.isTranslatingPage) return;
+    if (state.pageTranslationRecords.length) { restorePageTranslation(); return; }
+    const groups = translatablePageText();
+    if (!groups.length) {
+      state.pageTranslationError = "当前页面没有需要翻译的可见文字";
+      render();
+      return;
+    }
+    state.isTranslatingPage = true;
+    state.pageTranslationError = "";
+    const records = [];
+    render();
+    try {
+      for (let start = 0; start < groups.length; start += 120) {
+        const batch = groups.slice(start, start + 120);
+        state.pageTranslationProgress = `${Math.min(start + batch.length, groups.length)}/${groups.length}`;
+        render();
+        const response = await fetch(`${AGENT_ENDPOINT}/translate`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ texts: batch.map((item) => item.text) }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || `翻译服务返回 ${response.status}`);
+        const translated = new Map((payload.translations || []).map((item) => [Number(item.index), String(item.text || "").trim()]));
+        batch.forEach((group, index) => {
+          const replacement = translated.get(index);
+          if (!replacement || replacement === group.text) return;
+          for (const node of group.nodes) {
+            if (!node.isConnected) continue;
+            const original = String(node.nodeValue || "");
+            const leading = original.match(/^\s*/)?.[0] || "";
+            const trailing = original.match(/\s*$/)?.[0] || "";
+            const next = `${leading}${replacement}${trailing}`;
+            node.nodeValue = next;
+            records.push({ node, original, translated: next });
+          }
+        });
+      }
+      state.pageTranslationRecords = records;
+    } catch (error) {
+      state.pageTranslationRecords = records;
+      state.pageTranslationError = `翻译中断：${error?.message || "服务暂时不可用"}`;
+    } finally {
+      state.isTranslatingPage = false;
+      state.pageTranslationProgress = "";
+      render();
+    }
+  }
+
   function renderMatch() {
     const candidate = state.candidate || scanCandidate();
     const initial = candidate.canMatch ? candidate.name.slice(0, 1).toUpperCase() : "?";
@@ -1066,7 +1149,8 @@
     shadow.querySelector(".app")?.remove();
     const app = document.createElement("div");
     app.className = "app";
-    app.innerHTML = `<div class="sany-shell ${state.isOpen ? "is-open" : ""}" style="--pet-x:${pet.x}px;--pet-y:${pet.y}px;--panel-x:${panel.x}px;--panel-y:${panel.y}px"><button class="sany-trigger" data-action="toggle" aria-label="拖动或打开 SuperPeanut"><span class="trigger-pet-pair"><span class="trigger-peanut" aria-hidden="true">${PEANUT_IDLE_FRAMES.map((frame) => `<i style="--peanut-idle-frame:url('${escapeAttribute(frame)}')"></i>`).join("")}</span><span class="trigger-mochi" aria-hidden="true" style="--mochi-idle:url('${escapeAttribute(MOCHI_IDLE)}')"></span></span><span class="trigger-hint">拖动 · 点击打开</span></button><aside class="sany-panel" aria-label="SuperPeanut 面板"><header class="panel-top"><div class="panel-head"><div class="brand"><div class="brand-mark">P</div><div><h1>SuperPeanut</h1><p>${state.account ? `${escapeHtml(state.account.displayName || state.account.username)} · @${escapeHtml(state.account.username)}` : "LinkedIn 招聘匹配工作台"} · v${escapeHtml(EXTENSION_VERSION)}</p></div></div>${state.account ? `<button class="account-logout" data-action="logout-account">退出</button>` : ""}<button class="icon-button" data-action="close" aria-label="收起面板">×</button></div>${state.account ? `<nav class="tabs" aria-label="功能导航"><button class="tab ${state.tab === "match" ? "is-active" : ""}" data-action="tab" data-tab="match">候选人匹配</button><button class="tab ${state.tab === "hcs" ? "is-active" : ""}" data-action="tab" data-tab="hcs">HC 库</button><button class="tab ${state.tab === "history" ? "is-active" : ""}" data-action="tab" data-tab="history">查询记录</button><button class="tab ${state.tab === "agent" ? "is-active" : ""}" data-action="tab" data-tab="agent">Peanut</button></nav>` : ""}</header><main class="panel-body">${body}</main></aside>${state.account ? modalHtml() : ""}</div>`;
+    const translateLabel = state.isTranslatingPage ? `翻译中 ${state.pageTranslationProgress}` : state.pageTranslationRecords.length ? "还原原文" : "Translate · 中文";
+    app.innerHTML = `<div class="sany-shell ${state.isOpen ? "is-open" : ""}" style="--pet-x:${pet.x}px;--pet-y:${pet.y}px;--panel-x:${panel.x}px;--panel-y:${panel.y}px"><button class="page-translate ${state.pageTranslationRecords.length ? "is-active" : ""}" data-action="translate-page" ${state.isTranslatingPage ? "disabled" : ""}>${escapeHtml(translateLabel)}</button>${state.pageTranslationError ? `<span class="page-translate-error">${escapeHtml(state.pageTranslationError)}</span>` : ""}<button class="sany-trigger" data-action="toggle" aria-label="拖动或打开 SuperPeanut"><span class="trigger-pet-pair"><span class="trigger-peanut" aria-hidden="true">${PEANUT_IDLE_FRAMES.map((frame) => `<i style="--peanut-idle-frame:url('${escapeAttribute(frame)}')"></i>`).join("")}</span><span class="trigger-mochi" aria-hidden="true" style="--mochi-idle:url('${escapeAttribute(MOCHI_IDLE)}')"></span></span><span class="trigger-hint">拖动 · 点击打开</span></button><aside class="sany-panel" aria-label="SuperPeanut 面板"><header class="panel-top"><div class="panel-head"><div class="brand"><div class="brand-mark">P</div><div><h1>SuperPeanut</h1><p>${state.account ? `${escapeHtml(state.account.displayName || state.account.username)} · @${escapeHtml(state.account.username)}` : "LinkedIn 招聘匹配工作台"} · v${escapeHtml(EXTENSION_VERSION)}</p></div></div>${state.account ? `<button class="account-logout" data-action="logout-account">退出</button>` : ""}<button class="icon-button" data-action="close" aria-label="收起面板">×</button></div>${state.account ? `<nav class="tabs" aria-label="功能导航"><button class="tab ${state.tab === "match" ? "is-active" : ""}" data-action="tab" data-tab="match">候选人匹配</button><button class="tab ${state.tab === "hcs" ? "is-active" : ""}" data-action="tab" data-tab="hcs">HC 库</button><button class="tab ${state.tab === "history" ? "is-active" : ""}" data-action="tab" data-tab="history">查询记录</button><button class="tab ${state.tab === "agent" ? "is-active" : ""}" data-action="tab" data-tab="agent">Peanut</button></nav>` : ""}</header><main class="panel-body">${body}</main></aside>${state.account ? modalHtml() : ""}</div>`;
     shadow.append(app);
     if (state.tab === "agent") scrollAgentToLatest();
   }
@@ -1455,6 +1539,7 @@
     if (!control) return;
     const action = control.dataset.action;
     if (action === "close-modal" && control.classList.contains("modal-backdrop") && event.target !== control) return;
+    if (action === "translate-page") { await translatePageToChinese(); return; }
     if (action === "toggle") { if (Date.now() < state.suppressPetClickUntil) return; state.isOpen = true; await refreshData({ rescan: true }); return; }
     if (action === "close") { state.isOpen = false; state.modal = null; render(); return; }
     if (action === "auth-register") { state.authMode = "register"; state.authError = ""; render(); return; }

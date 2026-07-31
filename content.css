@@ -589,3 +589,9 @@
 .panel-auth-error { margin:0; padding:10px 11px; border:1px solid #f1c3bc; border-radius:9px; color:#a7483d; background:#fff1ee; font-size:11px; line-height:1.45; }
 .account-logout { min-height:28px; margin-left:auto; padding:0 9px; border:1px solid #ddd8ce; border-radius:8px; color:#787872; background:#fffdf9; cursor:pointer; font:inherit; font-size:10px; }
 .account-logout:hover { color:#3d653f; border-color:#b9d1b9; background:#f3f8f0; }
+
+.page-translate { position:absolute; z-index:4; left:50%; top:-31px; min-width:104px; height:29px; padding:0 11px; border:1px solid #d9d3c8; border-radius:999px; color:#54564f; background:rgba(255,253,249,.97); box-shadow:0 6px 18px rgba(61,53,43,.14); cursor:pointer; font:700 10px/1 ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; white-space:nowrap; transform:translateX(-50%); transition:transform 160ms ease,border-color 160ms ease,background 160ms ease; }
+.page-translate:hover:not(:disabled) { border-color:#aaca74; color:#395c31; background:#f5ffe9; transform:translateX(-50%) translateY(-2px); }
+.page-translate.is-active { border-color:#aaca74; color:#315326; background:#eaffcf; }
+.page-translate:disabled { cursor:wait; opacity:.76; }
+.page-translate-error { position:absolute; z-index:5; right:0; bottom:calc(100% + 39px); width:220px; padding:8px 10px; border:1px solid #efb5ad; border-radius:9px; color:#a83d32; background:#fff0ed; box-shadow:0 8px 22px rgba(65,48,42,.13); font:600 10px/1.45 ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
