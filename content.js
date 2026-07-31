@@ -4,6 +4,8 @@
   const EXTENSION_VERSION = chrome.runtime.getManifest().version;
   const HC_SORT_KEY = "superpeanut_hc_sort";
   const PET_POSITION_KEY = "superpeanut_pet_position";
+  const TRANSLATION_BATCH_SIZE = 60;
+  const TRANSLATION_CONCURRENCY = 10;
   const PEANUT_SPRITESHEET = chrome.runtime.getURL("assets/peanut-spritesheet.webp");
   const MOCHI_RUNNING = chrome.runtime.getURL("assets/mochi-running.webp");
   const MOCHI_IDLE = chrome.runtime.getURL("assets/mochi-idle.webp");
@@ -962,6 +964,11 @@
 
   function translatablePageText() {
     const grouped = new Map();
+    const addGroup = (text, target, kind) => {
+      if (!grouped.has(text)) grouped.set(text, { nodes: [], attributes: [] });
+      if (kind === "text") grouped.get(text).nodes.push(target);
+      else grouped.get(text).attributes.push(target);
+    };
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     while (walker.nextNode()) {
       const node = walker.currentNode;
@@ -971,16 +978,30 @@
       if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0) continue;
       const source = String(node.nodeValue || "");
       const text = source.replace(/\s+/g, " ").trim();
-      if (text.length < 2 || text.length > 1600 || !/[A-Za-zÀ-ž]/u.test(text) || /^(?:https?:\/\/|www\.|@)[^\s]+$/i.test(text)) continue;
-      if (!grouped.has(text)) grouped.set(text, []);
-      grouped.get(text).push(node);
+      if (text.length < 2 || text.length > 6000 || !/[A-Za-zÀ-ž]/u.test(text) || /^(?:https?:\/\/|www\.|@)[^\s]+$/i.test(text)) continue;
+      addGroup(text, node, "text");
     }
-    return [...grouped.entries()].slice(0, 700).map(([text, nodes]) => ({ text, nodes }));
+    for (const element of document.body.querySelectorAll("[placeholder],[title],[aria-label],input[type='button'][value],input[type='submit'][value]")) {
+      if (root.contains(element)) continue;
+      const style = window.getComputedStyle(element);
+      if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0) continue;
+      for (const name of ["placeholder", "title", "aria-label", "value"]) {
+        if (!element.hasAttribute(name)) continue;
+        const text = String(element.getAttribute(name) || "").replace(/\s+/g, " ").trim();
+        if (text.length < 2 || text.length > 6000 || !/[A-Za-zÀ-ž]/u.test(text) || /^(?:https?:\/\/|www\.|@)[^\s]+$/i.test(text)) continue;
+        addGroup(text, { element, name }, "attribute");
+      }
+    }
+    return [...grouped.entries()].map(([text, targets]) => ({ text, ...targets }));
   }
 
   function restorePageTranslation() {
     for (const record of state.pageTranslationRecords) {
-      if (record.node?.isConnected && record.node.nodeValue === record.translated) record.node.nodeValue = record.original;
+      if (record.kind === "attribute") {
+        if (record.element?.isConnected && record.element.getAttribute(record.name) === record.translated) record.element.setAttribute(record.name, record.original);
+      } else if (record.node?.isConnected && record.node.nodeValue === record.translated) {
+        record.node.nodeValue = record.original;
+      }
     }
     state.pageTranslationRecords = [];
     state.pageTranslationProgress = "";
@@ -1000,7 +1021,10 @@
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || `翻译服务返回 ${response.status}`);
-      return new Map((payload.translations || []).map((item) => [Number(item.index), String(item.text || "").trim()]));
+      const translated = new Map((payload.translations || []).map((item) => [Number(item.index), String(item.text || "").trim()]));
+      const missing = batch.reduce((count, _item, index) => count + (translated.has(index) ? 0 : 1), 0);
+      if (missing) throw new Error(`翻译服务遗漏 ${missing} 段文字`);
+      return translated;
     } catch (error) {
       if (error?.name === "AbortError") throw new Error("单批翻译超过 75 秒");
       throw error;
@@ -1025,7 +1049,7 @@
     render();
     try {
       const batches = [];
-      for (let start = 0; start < groups.length; start += 120) batches.push(groups.slice(start, start + 120));
+      for (let start = 0; start < groups.length; start += TRANSLATION_BATCH_SIZE) batches.push(groups.slice(start, start + TRANSLATION_BATCH_SIZE));
       let nextBatch = 0;
       let completed = 0;
       const errors = [];
@@ -1041,7 +1065,14 @@
             const trailing = original.match(/\s*$/)?.[0] || "";
             const next = `${leading}${replacement}${trailing}`;
             node.nodeValue = next;
-            records.push({ node, original, translated: next });
+            records.push({ kind: "text", node, original, translated: next });
+          }
+          for (const target of group.attributes) {
+            if (!target.element?.isConnected) continue;
+            const original = target.element.getAttribute(target.name);
+            if (original === null) continue;
+            target.element.setAttribute(target.name, replacement);
+            records.push({ kind: "attribute", element: target.element, name: target.name, original, translated: replacement });
           }
         });
         completed += batch.length;
@@ -1055,11 +1086,24 @@
           try {
             await translateBatch(batch);
           } catch (error) {
-            errors.push(error);
+            // A large response can occasionally be truncated. Retry that batch as
+            // smaller independent fragments so one bad response cannot leave holes.
+            for (let start = 0; start < batch.length; start += 15) {
+              const fragment = batch.slice(start, start + 15);
+              try {
+                await translateBatch(fragment);
+              } catch (fragmentError) {
+                try {
+                  await translateBatch(fragment);
+                } catch (retryError) {
+                  errors.push(retryError || fragmentError || error);
+                }
+              }
+            }
           }
         }
       };
-      await Promise.all(Array.from({ length: Math.min(3, batches.length) }, () => worker()));
+      await Promise.all(Array.from({ length: Math.min(TRANSLATION_CONCURRENCY, batches.length) }, () => worker()));
       state.pageTranslationRecords = records;
       if (errors.length) throw errors[0];
     } catch (error) {
